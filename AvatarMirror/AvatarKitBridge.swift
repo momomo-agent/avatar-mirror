@@ -15,46 +15,6 @@ final class AvatarKitBridge {
     private var currentType: AvatarType = .animoji("tiger")
     private var frameworkLoaded = false
     
-    // MARK: - ARKit blendshape order (matches AvatarKit's 51 indices)
-    static let arkitBlendShapeOrder: [ARFaceAnchor.BlendShapeLocation] = [
-        .eyeBlinkLeft, .eyeBlinkRight, .eyeSquintLeft, .eyeSquintRight,
-        .eyeLookDownLeft, .eyeLookDownRight, .eyeLookInLeft, .eyeLookInRight,
-        .eyeWideLeft, .eyeWideRight, .eyeLookOutLeft, .eyeLookOutRight,
-        .eyeLookUpLeft, .eyeLookUpRight,
-        .browDownLeft, .browDownRight, .browInnerUp, .browOuterUpLeft, .browOuterUpRight,
-        .jawOpen, .mouthClose, .jawLeft, .jawRight, .jawForward,
-        .mouthUpperUpLeft, .mouthUpperUpRight, .mouthLowerDownLeft, .mouthLowerDownRight,
-        .mouthRollUpper, .mouthRollLower, .mouthSmileLeft, .mouthSmileRight,
-        .mouthDimpleLeft, .mouthDimpleRight, .mouthStretchLeft, .mouthStretchRight,
-        .mouthFrownLeft, .mouthFrownRight, .mouthPressLeft, .mouthPressRight,
-        .mouthPucker, .mouthFunnel, .mouthLeft, .mouthRight,
-        .mouthShrugLower, .mouthShrugUpper, .noseSneerLeft, .noseSneerRight,
-        .cheekPuff, .cheekSquintLeft, .cheekSquintRight,
-    ]
-    
-    // MARK: - Tracking data struct (must match AvatarKit's expected layout)
-    struct TrackingData {
-        var timestamp: Double = 0
-        var isTracking: Bool = true
-        var blendShapes: (
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float
-        ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var parameters: (
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float,Float,Float,Float,Float,Float,Float,Float,Float,Float,
-            Float
-        ) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-        var extra: (Float, Float) = (0, 0)
-    }
-    
     // MARK: - Setup
     
     private func ensureFramework() -> Bool {
@@ -79,11 +39,7 @@ final class AvatarKitBridge {
         self.avtView = view as? NSObject
         
         setBool(on: view, selector: "setRendersContinuously:", value: true)
-        
-        if let bgSel = NSSelectorFromString("setBackgroundColor:") as Selector?,
-           view.responds(to: bgSel) {
-            view.perform(bgSel, with: UIColor.clear)
-        }
+        view.backgroundColor = .clear
         
         return view
     }
@@ -97,14 +53,12 @@ final class AvatarKitBridge {
             return
         }
         
-        // Use ObjC runtime to alloc+init since Swift's alloc() is unavailable
         let allocSel = NSSelectorFromString("alloc")
         guard let allocMethod = class_getClassMethod(cls, allocSel) else { return }
         let allocImp = method_getImplementation(allocMethod)
         typealias AllocFunc = @convention(c) (AnyClass, Selector) -> NSObject
         let instance = unsafeBitCast(allocImp, to: AllocFunc.self)(cls, allocSel)
         
-        // initWithName:error:
         let initSel = NSSelectorFromString("initWithName:error:")
         guard instance.responds(to: initSel),
               let method = class_getInstanceMethod(type(of: instance), initSel) else {
@@ -132,7 +86,6 @@ final class AvatarKitBridge {
         self.avatar = animoji
         self.currentType = .animoji(name)
         
-        // Set avatar on view — don't apply any pose transition
         avtView?.perform(NSSelectorFromString("setAvatar:"), with: animoji)
         print("✅ Loaded animoji: \(name)")
     }
@@ -141,21 +94,18 @@ final class AvatarKitBridge {
         guard ensureFramework() else { return }
         guard let cls = NSClassFromString("AVTMemoji") else { return }
         
-        // Alloc via runtime
         let allocSel = NSSelectorFromString("alloc")
         guard let allocMethod = class_getClassMethod(cls, allocSel) else { return }
         let allocImp = method_getImplementation(allocMethod)
         typealias AllocFunc = @convention(c) (AnyClass, Selector) -> NSObject
         let instance = unsafeBitCast(allocImp, to: AllocFunc.self)(cls, allocSel)
         
-        // init
         let initSel = NSSelectorFromString("init")
         guard let initMethod = class_getInstanceMethod(type(of: instance), initSel) else { return }
         let initImp = method_getImplementation(initMethod)
         typealias InitFunc = @convention(c) (NSObject, Selector) -> NSObject?
         guard let memoji = unsafeBitCast(initImp, to: InitFunc.self)(instance, initSel) else { return }
         
-        // Randomize appearance
         let randomSel = NSSelectorFromString("randomize")
         if memoji.responds(to: randomSel) {
             memoji.perform(randomSel)
@@ -197,31 +147,111 @@ final class AvatarKitBridge {
         print("✅ Applied body sticker: \(stickerName)")
     }
     
-    // MARK: - Face Tracking
+    // MARK: - Face Tracking (direct ARFaceAnchor → AVTPuppet)
     
     func applyFaceAnchor(_ anchor: ARFaceAnchor) {
         guard let avatar = self.avatar else { return }
         
-        var data = TrackingData()
-        data.timestamp = CACurrentMediaTime()
-        data.isTracking = true
+        // Method 1: Try using AVTAvatarInstance's built-in ARKit integration
+        // AVTAnimoji/AVTAvatar should have applyBlendShapes: that takes a dictionary
+        let dictSel = NSSelectorFromString("applyBlendShapes:")
+        if avatar.responds(to: dictSel) {
+            // Convert ARFaceAnchor blendShapes to the format AvatarKit expects
+            avatar.perform(dictSel, with: anchor.blendShapes)
+        }
         
-        withUnsafeMutablePointer(to: &data.blendShapes) { ptr in
-            let floatPtr = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: Float.self)
-            for (i, location) in Self.arkitBlendShapeOrder.enumerated() {
-                floatPtr[i] = anchor.blendShapes[location]?.floatValue ?? 0
+        // Method 2: Apply head transform via the puppet
+        let puppetSel = NSSelectorFromString("puppet")
+        if avatar.responds(to: puppetSel),
+           let puppet = avatar.perform(puppetSel)?.takeUnretainedValue() as? NSObject {
+            
+            // Try applyBlendShapesFromFaceAnchor: on puppet
+            let anchorSel = NSSelectorFromString("applyBlendShapesFromFaceAnchor:")
+            if puppet.responds(to: anchorSel) {
+                puppet.perform(anchorSel, with: anchor)
+                return
+            }
+            
+            // Try setBlendShapesDictionary: on puppet
+            let bsSel = NSSelectorFromString("setBlendShapesDictionary:")
+            if puppet.responds(to: bsSel) {
+                puppet.perform(bsSel, with: anchor.blendShapes)
+            }
+            
+            // Apply head rotation via transform
+            let transformSel = NSSelectorFromString("setHeadTransform:")
+            if puppet.responds(to: transformSel) {
+                var transform = anchor.transform
+                withUnsafePointer(to: &transform) { ptr in
+                    let method = class_getInstanceMethod(type(of: puppet), transformSel)!
+                    let imp = method_getImplementation(method)
+                    typealias Func = @convention(c) (NSObject, Selector, UnsafeRawPointer) -> Void
+                    unsafeBitCast(imp, to: Func.self)(puppet, transformSel, ptr)
+                }
             }
         }
         
+        // Method 3: Fallback — use AVTFaceTrackingInfo with correct C struct layout
+        applyViaTrackingInfo(anchor: anchor)
+    }
+    
+    private func applyViaTrackingInfo(anchor: ARFaceAnchor) {
+        guard let avatar = self.avatar else { return }
         guard let trackInfoCls = NSClassFromString("AVTFaceTrackingInfo") else { return }
         
-        withUnsafePointer(to: &data) { dataPtr in
-            let trackInfo = invokeClassMethod(
-                cls: trackInfoCls,
-                selector: "trackingInfoWithTrackingData:",
-                pointerArg: dataPtr
-            )
-            guard let info = trackInfo else { return }
+        // Build the tracking data as a flat C-compatible buffer
+        // Layout: Double timestamp, UInt8 isTracking, [padding to 4-byte], 51 Float blendShapes, 51 Float parameters, 2 Float extra
+        // Total: 8 + 1 + 3(pad) + 204 + 204 + 8 = 428 bytes
+        var buffer = [UInt8](repeating: 0, count: 428)
+        
+        buffer.withUnsafeMutableBytes { raw in
+            let base = raw.baseAddress!
+            
+            // timestamp (offset 0, 8 bytes)
+            var ts = CACurrentMediaTime()
+            memcpy(base, &ts, 8)
+            
+            // isTracking (offset 8, 1 byte)
+            base.storeBytes(of: UInt8(1), toByteOffset: 8, as: UInt8.self)
+            
+            // blendShapes (offset 12, 51 * 4 = 204 bytes)
+            let blendShapeOrder: [ARFaceAnchor.BlendShapeLocation] = [
+                .eyeBlinkLeft, .eyeBlinkRight, .eyeSquintLeft, .eyeSquintRight,
+                .eyeLookDownLeft, .eyeLookDownRight, .eyeLookInLeft, .eyeLookInRight,
+                .eyeWideLeft, .eyeWideRight, .eyeLookOutLeft, .eyeLookOutRight,
+                .eyeLookUpLeft, .eyeLookUpRight,
+                .browDownLeft, .browDownRight, .browInnerUp, .browOuterUpLeft, .browOuterUpRight,
+                .jawOpen, .mouthClose, .jawLeft, .jawRight, .jawForward,
+                .mouthUpperUpLeft, .mouthUpperUpRight, .mouthLowerDownLeft, .mouthLowerDownRight,
+                .mouthRollUpper, .mouthRollLower, .mouthSmileLeft, .mouthSmileRight,
+                .mouthDimpleLeft, .mouthDimpleRight, .mouthStretchLeft, .mouthStretchRight,
+                .mouthFrownLeft, .mouthFrownRight, .mouthPressLeft, .mouthPressRight,
+                .mouthPucker, .mouthFunnel, .mouthLeft, .mouthRight,
+                .mouthShrugLower, .mouthShrugUpper, .noseSneerLeft, .noseSneerRight,
+                .cheekPuff, .cheekSquintLeft, .cheekSquintRight,
+            ]
+            
+            for (i, location) in blendShapeOrder.enumerated() {
+                var val = anchor.blendShapes[location]?.floatValue ?? 0
+                memcpy(base + 12 + i * 4, &val, 4)
+            }
+            
+            // parameters (offset 216, 51 * 4 = 204 bytes) — copy same as blendShapes
+            for (i, location) in blendShapeOrder.enumerated() {
+                var val = anchor.blendShapes[location]?.floatValue ?? 0
+                memcpy(base + 216 + i * 4, &val, 4)
+            }
+        }
+        
+        // Create AVTFaceTrackingInfo from buffer
+        let sel = NSSelectorFromString("trackingInfoWithTrackingData:")
+        guard let method = class_getClassMethod(trackInfoCls, sel) else { return }
+        let imp = method_getImplementation(method)
+        
+        buffer.withUnsafeBytes { raw in
+            typealias Func = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
+            let fn = unsafeBitCast(imp, to: Func.self)
+            guard let info = fn(trackInfoCls, sel, raw.baseAddress!) else { return }
             
             avatar.perform(NSSelectorFromString("applyBlendShapesWithTrackingInfo:"), with: info)
             avatar.perform(NSSelectorFromString("applyHeadPoseWithTrackingInfo:"), with: info)
@@ -260,13 +290,5 @@ final class AvatarKitBridge {
         let imp = method_getImplementation(method)
         typealias SetBoolFunc = @convention(c) (NSObject, Selector, Bool) -> Void
         unsafeBitCast(imp, to: SetBoolFunc.self)(obj, sel, value)
-    }
-    
-    private func invokeClassMethod(cls: AnyClass, selector: String, pointerArg: UnsafeRawPointer) -> NSObject? {
-        let sel = NSSelectorFromString(selector)
-        guard let method = class_getClassMethod(cls, sel) else { return nil }
-        let imp = method_getImplementation(method)
-        typealias Func = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
-        return unsafeBitCast(imp, to: Func.self)(cls, sel, pointerArg)
     }
 }

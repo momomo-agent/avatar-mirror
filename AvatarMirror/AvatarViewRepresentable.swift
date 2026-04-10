@@ -16,32 +16,40 @@ struct AvatarViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-/// Container that creates AVTView once it has a real frame size.
+/// Container that creates AVTView with correct square aspect ratio.
 private class AVTContainerView: UIView {
     var bridge: AvatarKitBridge?
     var animojiName: String = "tiger"
     private var avtViewAdded = false
+    private weak var avtView: UIView?
     
     override func layoutSubviews() {
         super.layoutSubviews()
         
-        guard !avtViewAdded, bounds.width > 0, bounds.height > 0 else {
-            // Update existing AVTView frame
-            if let avtView = subviews.first {
-                avtView.frame = bounds
-            }
-            return
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        
+        if !avtViewAdded {
+            guard let bridge = bridge,
+                  let view = bridge.createView(frame: squareFrame()) else { return }
+            
+            view.autoresizingMask = []
+            addSubview(view)
+            avtView = view
+            avtViewAdded = true
+            
+            bridge.loadAnimoji(animojiName)
+            print("✅ AVTView created with frame: \(view.frame)")
+        } else {
+            // Update frame on rotation/resize
+            avtView?.frame = squareFrame()
         }
-        
-        guard let bridge = bridge,
-              let avtView = bridge.createView(frame: bounds) else { return }
-        
-        avtView.frame = bounds
-        avtView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(avtView)
-        avtViewAdded = true
-        
-        bridge.loadAnimoji(animojiName)
-        print("✅ AVTView created with frame: \(bounds)")
+    }
+    
+    /// Compute a centered square frame that fits within bounds
+    private func squareFrame() -> CGRect {
+        let side = min(bounds.width, bounds.height)
+        let x = (bounds.width - side) / 2
+        let y = (bounds.height - side) / 2
+        return CGRect(x: x, y: y, width: side, height: side)
     }
 }
