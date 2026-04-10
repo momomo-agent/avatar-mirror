@@ -1,16 +1,25 @@
 import SwiftUI
 import ARKit
 import AVFoundation
+import HumanSenseKit
 
 @MainActor
-final class AvatarMirrorViewModel: NSObject, ObservableObject {
+final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate {
     @Published var isTracking = false
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
     @Published var debugStatus = "Starting..."
+    @Published var useHumanSenseKit = true // Toggle between HumanSenseKit and built-in
     
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
+    
+    // HumanSenseKit for external tracking
+    private var kit: HumanSenseKit?
+    private var displayLink: CADisplayLink?
+    
+    // Direct ARSession as fallback
+    private var arSession: ARSession?
     
     private var savedMemojiRecord: NSObject?
     
@@ -34,16 +43,67 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     func onViewReady() {
         bridge.loadAnimoji(currentAnimoji)
         
-        // Use ONLY the built-in face tracking — no backup ARSession
-        // Two ARSessions fighting over the camera causes FigCaptureSourceRemote errors
-        bridge.startFaceTracking()
-        isTracking = true
-        debugStatus = "Tracking"
+        if useHumanSenseKit {
+            startHumanSenseKitTracking()
+        } else {
+            bridge.startBuiltInTracking()
+            debugStatus = "Built-in tracking"
+        }
+    }
+    
+    // MARK: - HumanSenseKit Tracking
+    
+    private func startHumanSenseKitTracking() {
+        bridge.startExternalTracking()
+        
+        kit = HumanSenseKit(enableHandGestures: false, enableSTT: false)
+        kit?.start()
+        
+        debugStatus = "HumanSenseKit tracking"
+        print("✅ HumanSenseKit started for external tracking")
+        
+        // Display link to poll HumanSenseKit state
+        let link = CADisplayLink(target: self, selector: #selector(updateFromHSK))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
+        link.add(to: .main, forMode: .common)
+        self.displayLink = link
+    }
+    
+    private var frameCount = 0
+    
+    @objc private func updateFromHSK() {
+        guard let kit = kit else { return }
+        kit.state.update()
+        
+        isTracking = kit.state.isPresent
+        
+        frameCount += 1
+        if frameCount % 300 == 0 {
+            let hasAnchor = kit.currentFaceAnchor != nil
+            debugStatus = "HSK | present=\(isTracking) | anchor=\(hasAnchor)"
+        }
+        
+        if let anchor = kit.currentFaceAnchor {
+            bridge.applyFaceAnchor(anchor)
+        }
     }
     
     func stop() {
-        bridge.stopFaceTracking()
-        isTracking = false
+        displayLink?.invalidate()
+        displayLink = nil
+        kit?.stop()
+        kit = nil
+        bridge.stopTracking()
+        arSession?.pause()
+        arSession = nil
+    }
+    
+    // MARK: - Toggle Tracking Mode
+    
+    func toggleTrackingMode() {
+        stop()
+        useHumanSenseKit.toggle()
+        onViewReady()
     }
     
     // MARK: - Switching

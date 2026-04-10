@@ -18,6 +18,19 @@ struct ContentView: View {
                     
                     Spacer()
                     
+                    // Toggle tracking mode
+                    Button {
+                        viewModel.toggleTrackingMode()
+                    } label: {
+                        Text(viewModel.useHumanSenseKit ? "HSK" : "Built-in")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(viewModel.useHumanSenseKit ? .green.opacity(0.3) : .blue.opacity(0.3))
+                            .clipShape(Capsule())
+                            .foregroundStyle(.white)
+                    }
+                    
                     Button {
                         viewModel.presentMemojiCreator()
                     } label: {
