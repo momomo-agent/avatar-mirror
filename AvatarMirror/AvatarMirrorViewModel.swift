@@ -4,7 +4,7 @@ import AVFoundation
 import HumanSenseKit
 
 @MainActor
-final class AvatarMirrorViewModel: NSObject, ObservableObject {
+final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate {
     @Published var isTracking = false
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
@@ -14,8 +14,9 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
     
+    // Direct ARSession as primary — HumanSenseKit as optional enrichment
+    private var arSession: ARSession?
     private var kit: HumanSenseKit?
-    private var displayLink: CADisplayLink?
     private var savedMemojiRecord: NSObject?
     
     func start() {
@@ -24,42 +25,89 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             return
         }
         
-        debugStatus = "Requesting camera permission..."
-        print("📷 Requesting camera permission...")
+        debugStatus = "Requesting camera..."
         
-        // Explicitly request camera permission before starting ARSession
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
                 if granted {
-                    print("✅ Camera permission granted")
-                    self.debugStatus = "Camera granted, starting AR..."
-                    self.startTracking()
+                    self.debugStatus = "Camera OK, starting AR..."
+                    self.startDirectARSession()
                 } else {
-                    print("❌ Camera permission denied")
-                    self.debugStatus = "❌ Camera permission denied — go to Settings"
+                    self.debugStatus = "❌ Camera denied"
                 }
             }
         }
     }
     
-    private func startTracking() {
-        kit = HumanSenseKit(enableHandGestures: false, enableSTT: false)
-        kit?.start()
+    private func startDirectARSession() {
+        // Use our own ARSession directly — don't rely on HumanSenseKit's internal session
+        let session = ARSession()
+        session.delegate = self
+        self.arSession = session
         
-        debugStatus = "HumanSenseKit started"
-        print("✅ HumanSenseKit started")
+        let config = ARFaceTrackingConfiguration()
+        config.maximumNumberOfTrackedFaces = 1
+        session.run(config, options: [.resetTracking, .removeExistingAnchors])
         
-        let link = CADisplayLink(target: self, selector: #selector(update))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
-        link.add(to: .main, forMode: .common)
-        self.displayLink = link
+        debugStatus = "ARSession running (direct)"
+        print("✅ Direct ARSession started with ARFaceTrackingConfiguration")
     }
     
     func stop() {
-        displayLink?.invalidate()
-        displayLink = nil
-        kit?.stop()
+        arSession?.pause()
+        arSession = nil
+    }
+    
+    // MARK: - ARSessionDelegate (direct)
+    
+    nonisolated func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+        guard let faceAnchor = anchors.compactMap({ $0 as? ARFaceAnchor }).first else { return }
+        Task { @MainActor in
+            let wasTracking = isTracking
+            isTracking = faceAnchor.isTracked
+            
+            if isTracking != wasTracking {
+                debugStatus = isTracking ? "✅ Face detected!" : "Face lost"
+                print("🔄 Tracking: \(wasTracking) → \(isTracking)")
+            }
+            
+            bridge.applyFaceAnchor(faceAnchor)
+        }
+    }
+    
+    nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
+        print("❌ ARSession error: \(error)")
+        Task { @MainActor in
+            debugStatus = "❌ AR error: \(error.localizedDescription)"
+        }
+    }
+    
+    nonisolated func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        let state: String
+        switch camera.trackingState {
+        case .notAvailable: state = "Not available"
+        case .limited(let reason):
+            switch reason {
+            case .initializing: state = "Initializing..."
+            case .excessiveMotion: state = "Too much motion"
+            case .insufficientFeatures: state = "Insufficient features"
+            case .relocalizing: state = "Relocalizing"
+            @unknown default: state = "Limited (unknown)"
+            }
+        case .normal: state = "Normal"
+        }
+        print("📷 Camera tracking state: \(state)")
+        Task { @MainActor in
+            debugStatus = "Camera: \(state)"
+        }
+    }
+    
+    nonisolated func sessionWasInterrupted(_ session: ARSession) {
+        print("⚠️ ARSession interrupted")
+        Task { @MainActor in
+            debugStatus = "⚠️ AR interrupted"
+        }
     }
     
     // MARK: - Switching
@@ -107,33 +155,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 avtView.perform(NSSelectorFromString("setAvatar:"), with: avatar)
                 print("✅ Loaded saved memoji")
             }
-        }
-    }
-    
-    // MARK: - Update Loop
-    
-    private var frameCount = 0
-    
-    @objc private func update() {
-        guard let kit = kit else { return }
-        kit.state.update()
-        
-        let wasTracking = isTracking
-        isTracking = kit.state.isPresent
-        
-        if isTracking != wasTracking {
-            print("🔄 Tracking: \(wasTracking) → \(isTracking)")
-        }
-        
-        frameCount += 1
-        if frameCount % 300 == 0 {
-            let hasAnchor = kit.currentFaceAnchor != nil
-            debugStatus = "F\(frameCount) | present=\(isTracking) | anchor=\(hasAnchor)"
-            print("📊 \(debugStatus)")
-        }
-        
-        if let anchor = kit.currentFaceAnchor {
-            bridge.applyFaceAnchor(anchor)
         }
     }
 }
