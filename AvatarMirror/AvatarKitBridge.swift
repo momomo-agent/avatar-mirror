@@ -2,9 +2,6 @@ import Foundation
 import ARKit
 
 /// Bridge between ARKit face tracking and Apple's private AvatarKit framework.
-/// Two modes:
-/// 1. Built-in: transitionToCustomFaceTracking (AVTRecordView manages its own ARSession)
-/// 2. External: applyARFrame() with data from HumanSenseKit's ARSession
 @MainActor
 final class AvatarKitBridge {
     
@@ -18,8 +15,8 @@ final class AvatarKitBridge {
     private var frameworkLoaded = false
     private(set) var trackingMode: TrackingMode = .external
     
-    // Cached class references
     private var trackInfoCls: AnyClass?
+    private var frameCount = 0
     
     // MARK: - Setup
     
@@ -46,7 +43,6 @@ final class AvatarKitBridge {
         self.avtView = view as? NSObject
         view.backgroundColor = .clear
         
-        // Enable continuous rendering for manual updates
         setBool(on: view as NSObject, selector: "setRendersContinuously:", value: true)
         
         print("✅ Created AVTRecordView")
@@ -85,145 +81,189 @@ final class AvatarKitBridge {
         if view.responds(to: sel) { view.perform(sel) }
     }
     
-    // MARK: - External Face Tracking (HumanSenseKit)
+    // MARK: - External Face Tracking
     
     func startExternalTracking() {
         trackingMode = .external
-        print("✅ External tracking mode — feed ARFrame via applyARFrame()")
+        print("✅ External tracking mode")
     }
     
-    /// Apply an ARFrame directly — uses AVTFaceTrackingInfo's +trackingInfoWithARFrame: factory
-    /// This is the correct way: AvatarKit creates its own tracking info from the full ARFrame,
-    /// including face anchor transform, blendshapes, and camera orientation.
+    /// Apply an ARFrame — tries multiple approaches with detailed logging
     func applyARFrame(_ frame: ARFrame) {
-        guard let avatar = avatar, let trackInfoCls = trackInfoCls else { return }
+        guard let avatar = avatar else { return }
         
-        // Get device orientation for correct coordinate mapping
-        let interfaceOrientation = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.interfaceOrientation ?? .portrait
-        let orientationRaw = interfaceOrientation.rawValue
+        frameCount += 1
+        let shouldLog = frameCount <= 5 || frameCount % 300 == 0
         
-        // Try +trackingInfoWithARFrame:captureOrientation:interfaceOrientation:
-        let sel3 = NSSelectorFromString("trackingInfoWithARFrame:captureOrientation:interfaceOrientation:")
-        if let meta = object_getClass(trackInfoCls),
-           let method = class_getClassMethod(meta, sel3) {
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-            let fn = unsafeBitCast(imp, to: Func.self)
+        let faceAnchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
+        if shouldLog {
+            print("🎯 Frame #\(frameCount): \(faceAnchors.count) face anchors")
+        }
+        
+        guard let faceAnchor = faceAnchors.first else { return }
+        
+        if shouldLog {
+            let bs = faceAnchor.blendShapes
+            let jawOpen = bs[.jawOpen]?.floatValue ?? -1
+            let smile = bs[.mouthSmileLeft]?.floatValue ?? -1
+            print("   jawOpen=\(jawOpen) smileL=\(smile) transform=\(faceAnchor.transform)")
+        }
+        
+        // Approach 1: trackingInfoWithARFrame:captureOrientation:interfaceOrientation:
+        if let trackInfoCls = trackInfoCls {
+            let orientationRaw = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first?.interfaceOrientation.rawValue ?? 1
             
-            if let info = fn(trackInfoCls, sel3, frame, orientationRaw, orientationRaw) {
-                applyTrackingInfo(info, to: avatar)
-                return
+            let sel = NSSelectorFromString("trackingInfoWithARFrame:captureOrientation:interfaceOrientation:")
+            if let meta = object_getClass(trackInfoCls),
+               let method = class_getClassMethod(meta, sel) {
+                let imp = method_getImplementation(method)
+                typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
+                let fn = unsafeBitCast(imp, to: Func.self)
+                
+                if let info = fn(trackInfoCls, sel, frame, orientationRaw, orientationRaw) {
+                    if shouldLog { print("   ✅ Approach 1: trackingInfoWithARFrame succeeded") }
+                    applyTrackingInfo(info, to: avatar, log: shouldLog)
+                    return
+                } else {
+                    if shouldLog { print("   ❌ Approach 1: trackingInfoWithARFrame returned nil") }
+                }
+            } else {
+                if shouldLog { print("   ❌ Approach 1: method not found") }
             }
         }
         
-        // Try +dataWithARFrame:captureOrientation:interfaceOrientation:
-        let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
-        if let meta = object_getClass(trackInfoCls),
-           let method = class_getClassMethod(meta, dataSel) {
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-            let fn = unsafeBitCast(imp, to: Func.self)
-            
-            if let info = fn(trackInfoCls, dataSel, frame, orientationRaw, orientationRaw) {
-                applyTrackingInfo(info, to: avatar)
-                return
+        // Approach 2: trackingInfoWithFaceAnchor:
+        if let trackInfoCls = trackInfoCls {
+            let sel = NSSelectorFromString("trackingInfoWithFaceAnchor:")
+            if let meta = object_getClass(trackInfoCls),
+               let method = class_getClassMethod(meta, sel) {
+                let imp = method_getImplementation(method)
+                typealias Func = @convention(c) (AnyClass, Selector, AnyObject) -> NSObject?
+                let fn = unsafeBitCast(imp, to: Func.self)
+                
+                if let info = fn(trackInfoCls, sel, faceAnchor) {
+                    if shouldLog { print("   ✅ Approach 2: trackingInfoWithFaceAnchor succeeded") }
+                    applyTrackingInfo(info, to: avatar, log: shouldLog)
+                    return
+                } else {
+                    if shouldLog { print("   ❌ Approach 2: trackingInfoWithFaceAnchor returned nil") }
+                }
+            } else {
+                if shouldLog { print("   ❌ Approach 2: method not found") }
             }
         }
         
-        // Fallback: extract face anchor and apply manually
-        if let faceAnchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first {
-            applyFaceAnchorViaTrackingInfo(faceAnchor)
-        }
-    }
-    
-    /// Apply face anchor via AVTFaceTrackingInfo (fallback when ARFrame methods don't work)
-    func applyFaceAnchorViaTrackingInfo(_ anchor: ARFaceAnchor) {
-        guard let avatar = avatar, let trackInfoCls = trackInfoCls else { return }
-        
-        // Use +trackingInfoWithTrackingData: with correct struct layout
-        let sel = NSSelectorFromString("trackingInfoWithTrackingData:")
-        guard let method = class_getClassMethod(trackInfoCls, sel) else { return }
-        let imp = method_getImplementation(method)
-        
-        // Struct layout from runtime dump:
-        // {?="timestamp"d "translation""orientation""cameraSpace"B
-        //    "blendShapeWeights_smooth"[51f] "blendShapeWeights_raw"[51f]
-        //    "parameters_smooth"[1f] "parameters_raw"[1f]}
-        //
-        // d = Double (8 bytes) — timestamp
-        // B = Bool (1 byte) — cameraSpace (isTracking)
-        // pad to 4-byte alignment (3 bytes)
-        // [51f] = 204 bytes — smooth blendshapes
-        // [51f] = 204 bytes — raw blendshapes
-        // [1f] = 4 bytes — smooth parameters
-        // [1f] = 4 bytes — raw parameters
-        // Total: 8 + 1 + 3 + 204 + 204 + 4 + 4 = 428 bytes
-        //
-        // BUT: "translation" and "orientation" appear between d and B with no type encoding.
-        // These might be simd types that ObjC can't encode. Let's check if the struct is actually bigger.
-        // The ivar offset is 16 (after isa+refcount), and _rawTransform is at offset 496.
-        // So _trackingData size = 496 - 16 = 480 bytes!
-        // Extra 52 bytes = likely simd_float3 translation (12) + simd_quatf orientation (16) + padding
-        // Revised layout:
-        // Double timestamp (8)
-        // simd_float3 translation (12) + pad (4) = 16
-        // simd_quatf orientation (16)
-        // Bool cameraSpace (1) + pad (3) = 4
-        // [51f] smooth (204)
-        // [51f] raw (204)
-        // [1f] smooth params (4)
-        // [1f] raw params (4)
-        // Total: 8 + 16 + 16 + 4 + 204 + 204 + 4 + 4 = 460... not 480
-        //
-        // Let's try the simpler approach: 428 bytes as the property encoding suggests
-        
-        let bufferSize = 428
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        
-        buffer.withUnsafeMutableBytes { raw in
-            let base = raw.baseAddress!
+        // Approach 3: Direct puppet method on AVTView
+        if let view = avtView {
+            let sel = NSSelectorFromString("applyFaceAnchor:")
+            if view.responds(to: sel) {
+                view.perform(sel, with: faceAnchor)
+                if shouldLog { print("   ✅ Approach 3: applyFaceAnchor on view") }
+                return
+            }
             
-            // timestamp (offset 0, 8 bytes)
-            var ts = CACurrentMediaTime()
-            memcpy(base, &ts, 8)
-            
-            // isTracking/cameraSpace (offset 8, 1 byte)
-            base.storeBytes(of: UInt8(1), toByteOffset: 8, as: UInt8.self)
-            
-            // blendShapeWeights_smooth (offset 12, 51 * 4 = 204 bytes)
-            // Use ARKit's rawValue alphabetical order (this is what AvatarKit expects)
-            let allLocations = anchor.blendShapes
-            for (location, value) in allLocations {
-                // Map ARKit blendshape to AvatarKit index
-                if let idx = Self.arkitBlendShapeOrder[location.rawValue], idx < 51 {
-                    var val = value.floatValue
-                    memcpy(base + 12 + idx * 4, &val, 4)
-                    // Also fill raw
-                    memcpy(base + 216 + idx * 4, &val, 4)
+            // Try the puppet view
+            let puppetSel = NSSelectorFromString("puppetView")
+            if view.responds(to: puppetSel),
+               let puppet = view.perform(puppetSel)?.takeUnretainedValue() as? NSObject {
+                let applyPuppetSel = NSSelectorFromString("applyFaceAnchor:")
+                if puppet.responds(to: applyPuppetSel) {
+                    puppet.perform(applyPuppetSel, with: faceAnchor)
+                    if shouldLog { print("   ✅ Approach 3b: applyFaceAnchor on puppetView") }
+                    return
                 }
             }
         }
         
-        buffer.withUnsafeBytes { raw in
-            typealias Func = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
+        // Approach 4: Direct _applyBlendShapes on avatar
+        let applySel = NSSelectorFromString("_applyBlendShapes:parameters:")
+        if avatar.responds(to: applySel) {
+            var blendShapes = [Float](repeating: 0, count: 51)
+            
+            for (location, value) in faceAnchor.blendShapes {
+                if let idx = Self.arkitBlendShapeOrder[location.rawValue], idx < 51 {
+                    blendShapes[idx] = value.floatValue
+                }
+            }
+            
+            let method = class_getInstanceMethod(type(of: avatar), applySel)!
+            let imp = method_getImplementation(method)
+            typealias Func = @convention(c) (NSObject, Selector, UnsafePointer<Float>, UnsafePointer<Float>) -> Void
             let fn = unsafeBitCast(imp, to: Func.self)
-            guard let info = fn(trackInfoCls, sel, raw.baseAddress!) else { return }
-            applyTrackingInfo(info, to: avatar)
+            
+            blendShapes.withUnsafeBufferPointer { bsPtr in
+                var params: [Float] = [0]
+                params.withUnsafeBufferPointer { pPtr in
+                    fn(avatar, applySel, bsPtr.baseAddress!, pPtr.baseAddress!)
+                }
+            }
+            if shouldLog { print("   ✅ Approach 4: _applyBlendShapes direct") }
+            
+            // Also try to apply head pose
+            applyHeadTransform(faceAnchor.transform, to: avatar, log: shouldLog)
+            return
+        }
+        
+        if shouldLog { print("   ❌ All approaches failed") }
+    }
+    
+    private func applyTrackingInfo(_ info: NSObject, to avatar: NSObject, log: Bool) {
+        let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
+        let poseSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:")
+        
+        if avatar.responds(to: bsSel) {
+            avatar.perform(bsSel, with: info)
+            if log { print("   → applyBlendShapes ✅") }
+        } else {
+            if log { print("   → applyBlendShapes ❌ not responding") }
+        }
+        
+        if avatar.responds(to: poseSel) {
+            avatar.perform(poseSel, with: info)
+            if log { print("   → applyHeadPose ✅") }
+        } else {
+            if log { print("   → applyHeadPose ❌ not responding") }
         }
     }
     
-    private func applyTrackingInfo(_ info: NSObject, to avatar: NSObject) {
-        let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
-        if avatar.responds(to: bsSel) {
-            avatar.perform(bsSel, with: info)
+    /// Apply head transform from ARFaceAnchor.transform (simd_float4x4)
+    private func applyHeadTransform(_ transform: simd_float4x4, to avatar: NSObject, log: Bool) {
+        // Try setHeadTransform: or similar
+        for selName in ["setHeadTransform:", "_setHeadTransform:", "applyHeadTransform:"] {
+            let sel = NSSelectorFromString(selName)
+            if avatar.responds(to: sel) {
+                // simd_float4x4 is 64 bytes, pass as NSValue
+                var t = transform
+                let value = NSValue(bytes: &t, objCType: "{simd_float4x4=[4]}")
+                avatar.perform(sel, with: value)
+                if log { print("   → \(selName) ✅") }
+                return
+            }
         }
         
-        let poseSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:")
-        if avatar.responds(to: poseSel) {
-            avatar.perform(poseSel, with: info)
+        // Try setting on the SceneKit node directly
+        // AVTRecordView is a SCNView, avatar's rootNode might be accessible
+        if let view = avtView {
+            let nodeSel = NSSelectorFromString("avatarNode")
+            if view.responds(to: nodeSel),
+               let node = view.perform(nodeSel)?.takeUnretainedValue() as? NSObject {
+                // SCNNode.simdTransform
+                let transformSel = NSSelectorFromString("setSimdTransform:")
+                if node.responds(to: transformSel) {
+                    var t = transform
+                    let method = class_getInstanceMethod(type(of: node), transformSel)!
+                    let imp = method_getImplementation(method)
+                    typealias Func = @convention(c) (NSObject, Selector, simd_float4x4) -> Void
+                    unsafeBitCast(imp, to: Func.self)(node, transformSel, t)
+                    if log { print("   → avatarNode.simdTransform ✅") }
+                    return
+                }
+            }
         }
+        
+        if log { print("   → head transform: no method found") }
     }
     
     // MARK: - Avatar Loading
@@ -250,7 +290,30 @@ final class AvatarKitBridge {
         
         self.avatar = animoji
         avtView?.setValue(animoji, forKeyPath: "avatar")
+        
+        // Dump what methods the avatar actually responds to
+        dumpAvatarCapabilities(animoji)
+        
         print("✅ Loaded animoji: \(name)")
+    }
+    
+    private func dumpAvatarCapabilities(_ obj: NSObject) {
+        let methods = [
+            "applyBlendShapesWithTrackingInfo:",
+            "applyHeadPoseWithTrackingInfo:",
+            "_applyBlendShapes:parameters:",
+            "_applyBlendShapesWithTrackingData:",
+            "_applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:",
+            "blendShapeIndexForARKitBlendShapeName:",
+            "setHeadTransform:",
+            "_setHeadTransform:",
+            "applyHeadTransform:",
+        ]
+        print("📋 Avatar capabilities:")
+        for m in methods {
+            let responds = obj.responds(to: NSSelectorFromString(m))
+            print("   \(responds ? "✅" : "❌") \(m)")
+        }
     }
     
     func loadMemoji() {
@@ -305,8 +368,7 @@ final class AvatarKitBridge {
         unsafeBitCast(imp, to: Func.self)(obj, sel, value)
     }
     
-    // ARKit blendshape rawValue -> AvatarKit index (alphabetical order of ARKit names)
-    // ARKit has 52 blendshapes, AvatarKit uses 51 (tongueOut might be excluded)
+    // ARKit blendshape name -> index (alphabetical order)
     static let arkitBlendShapeOrder: [String: Int] = {
         let names = [
             "browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight",
