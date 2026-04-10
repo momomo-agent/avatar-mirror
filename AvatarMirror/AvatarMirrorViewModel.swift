@@ -1,5 +1,6 @@
 import SwiftUI
 import ARKit
+import AVFoundation
 import HumanSenseKit
 
 @MainActor
@@ -18,17 +19,31 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     private var savedMemojiRecord: NSObject?
     
     func start() {
-        // Check ARKit support first
         guard ARFaceTrackingConfiguration.isSupported else {
-            debugStatus = "❌ Face tracking not supported on this device"
-            print(debugStatus)
-            bridge.loadAnimoji(currentAnimoji)
+            debugStatus = "❌ Face tracking not supported"
             return
         }
         
-        debugStatus = "ARKit supported, starting..."
-        print("✅ ARFaceTrackingConfiguration.isSupported = true")
+        debugStatus = "Requesting camera permission..."
+        print("📷 Requesting camera permission...")
         
+        // Explicitly request camera permission before starting ARSession
+        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+            Task { @MainActor in
+                guard let self else { return }
+                if granted {
+                    print("✅ Camera permission granted")
+                    self.debugStatus = "Camera granted, starting AR..."
+                    self.startTracking()
+                } else {
+                    print("❌ Camera permission denied")
+                    self.debugStatus = "❌ Camera permission denied — go to Settings"
+                }
+            }
+        }
+    }
+    
+    private func startTracking() {
         kit = HumanSenseKit(enableHandGestures: false, enableSTT: false)
         kit?.start()
         
@@ -39,8 +54,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
         link.add(to: .main, forMode: .common)
         self.displayLink = link
-        
-        bridge.loadAnimoji(currentAnimoji)
     }
     
     func stop() {
@@ -108,16 +121,14 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         let wasTracking = isTracking
         isTracking = kit.state.isPresent
         
-        // Log state changes
         if isTracking != wasTracking {
-            print("🔄 Tracking changed: \(wasTracking) → \(isTracking)")
+            print("🔄 Tracking: \(wasTracking) → \(isTracking)")
         }
         
-        // Periodic debug log
         frameCount += 1
-        if frameCount % 300 == 0 { // Every ~5 seconds at 60fps
+        if frameCount % 300 == 0 {
             let hasAnchor = kit.currentFaceAnchor != nil
-            debugStatus = "Frame \(frameCount) | isPresent=\(isTracking) | anchor=\(hasAnchor)"
+            debugStatus = "F\(frameCount) | present=\(isTracking) | anchor=\(hasAnchor)"
             print("📊 \(debugStatus)")
         }
         
