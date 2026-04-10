@@ -8,6 +8,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
     @Published var currentPose = "person_waving"
+    @Published var debugStatus = "Starting..."
     
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
@@ -17,8 +18,22 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     private var savedMemojiRecord: NSObject?
     
     func start() {
+        // Check ARKit support first
+        guard ARFaceTrackingConfiguration.isSupported else {
+            debugStatus = "❌ Face tracking not supported on this device"
+            print(debugStatus)
+            bridge.loadAnimoji(currentAnimoji)
+            return
+        }
+        
+        debugStatus = "ARKit supported, starting..."
+        print("✅ ARFaceTrackingConfiguration.isSupported = true")
+        
         kit = HumanSenseKit(enableHandGestures: false, enableSTT: false)
         kit?.start()
+        
+        debugStatus = "HumanSenseKit started"
+        print("✅ HumanSenseKit started")
         
         let link = CADisplayLink(target: self, selector: #selector(update))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
@@ -84,10 +99,27 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     
     // MARK: - Update Loop
     
+    private var frameCount = 0
+    
     @objc private func update() {
         guard let kit = kit else { return }
         kit.state.update()
+        
+        let wasTracking = isTracking
         isTracking = kit.state.isPresent
+        
+        // Log state changes
+        if isTracking != wasTracking {
+            print("🔄 Tracking changed: \(wasTracking) → \(isTracking)")
+        }
+        
+        // Periodic debug log
+        frameCount += 1
+        if frameCount % 300 == 0 { // Every ~5 seconds at 60fps
+            let hasAnchor = kit.currentFaceAnchor != nil
+            debugStatus = "Frame \(frameCount) | isPresent=\(isTracking) | anchor=\(hasAnchor)"
+            print("📊 \(debugStatus)")
+        }
         
         if let anchor = kit.currentFaceAnchor {
             bridge.applyFaceAnchor(anchor)
