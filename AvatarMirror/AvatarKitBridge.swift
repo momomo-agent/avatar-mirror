@@ -154,8 +154,8 @@ final class AvatarKitBridge {
             let imp = method_getImplementation(method)
             typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
             let fn = unsafeBitCast(imp, to: Func.self)
-            // inputOrientation: 1 = portrait, outputOrientation: 1 = portrait
-            if let info = fn(trackInfoCls, directSel, frame, 1, 1) {
+            // inputOrientation: 4 = landscapeRight (front camera sensor), outputOrientation: 1 = portrait (UI)
+            if let info = fn(trackInfoCls, directSel, frame, 4, 1) {
                 if log { print("   📦 trackingInfo via trackingInfoWithARFrame:inputOrientation:outputOrientation:") }
                 return info
             }
