@@ -109,186 +109,72 @@ final class AvatarKitBridge {
         let faceAnchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
         guard let faceAnchor = faceAnchors.first else { return }
         
-        let interfaceOrientationRaw = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.interfaceOrientation.rawValue ?? 1
-        let captureOrientationRaw = 4 // front camera sensor = landscapeRight
-        
         if shouldLog {
             let bs = faceAnchor.blendShapes
             print("🎯 Frame #\(frameCount): jawOpen=\(bs[.jawOpen]?.floatValue ?? -1)")
         }
         
-        // Strategy: use trackingInfo for BLENDSHAPES only, apply head pose separately
-        var blendShapesApplied = false
-        
-        // Try dataWithARFrame → trackingInfoWithTrackingData → applyBlendShapes
-        if let meta = object_getClass(trackInfoCls) {
-            let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
-            if let method = class_getClassMethod(meta, dataSel) {
-                let imp = method_getImplementation(method)
-                typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-                let fn = unsafeBitCast(imp, to: Func.self)
-                
-                if let data = fn(trackInfoCls, dataSel, frame, captureOrientationRaw, interfaceOrientationRaw) {
-                    // data is NSData — convert to trackingInfo
-                    let infoSel = NSSelectorFromString("trackingInfoWithTrackingData:")
-                    if let nsData = data as? Data,
-                       let infoMethod = class_getClassMethod(meta, infoSel) {
-                        let infoImp = method_getImplementation(infoMethod)
-                        nsData.withUnsafeBytes { rawBuf in
-                            typealias InfoFunc = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
-                            let infoFn = unsafeBitCast(infoImp, to: InfoFunc.self)
-                            if let info = infoFn(trackInfoCls, infoSel, rawBuf.baseAddress!) {
-                                let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
-                                if avatar.responds(to: bsSel) {
-                                    avatar.perform(bsSel, with: info)
-                                    blendShapesApplied = true
-                                    if shouldLog { print("   ✅ blendshapes via trackingInfo") }
-                                }
-                            }
-                        }
-                    }
-                    // Maybe data responds to trackingData (is already a trackingInfo)
-                    if !blendShapesApplied {
-                        let tdSel = NSSelectorFromString("trackingData")
-                        if data.responds(to: tdSel) {
-                            let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
-                            if avatar.responds(to: bsSel) {
-                                avatar.perform(bsSel, with: data)
-                                blendShapesApplied = true
-                                if shouldLog { print("   ✅ blendshapes via trackingInfo (direct)") }
-                            }
-                        }
-                    }
-                }
-            }
+        // Build trackingInfo ONCE, use for both blendshapes and head pose.
+        // Calling dataWithARFrame twice per frame causes VFXWorld assertion failures.
+        guard let trackingInfo = buildTrackingInfo(from: frame, log: shouldLog) else {
+            if shouldLog { print("   ⚠️ Failed to build trackingInfo") }
+            return
         }
         
-        if !blendShapesApplied {
-            if shouldLog { print("   ⚠️ blendshapes fallback not implemented yet") }
-        }
-        
-        // HEAD POSE: always apply directly from ARFaceAnchor
-        // applyHeadPoseWithTrackingInfo flips 180° in external mode, so we do it ourselves
-        applyHeadPose(from: faceAnchor, log: shouldLog)
-    }
-    
-    private func applyTrackingInfo(_ info: NSObject, to avatar: NSObject, log: Bool) {
+        // Apply blendshapes
         let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
         if avatar.responds(to: bsSel) {
-            avatar.perform(bsSel, with: info)
-            if log { print("   → applyBlendShapes ✅") }
-        }
-    }
-    
-    /// Apply head pose using AvatarKit's own applyHeadPoseWithTrackingInfo method
-    /// or fall back to direct node manipulation
-    private func applyHeadPose(from anchor: ARFaceAnchor, log: Bool) {
-        guard let avatar = avatar else { return }
-        
-        // Check avatarNode.world — required by applyHeadPoseWithTrackingInfo
-        let avatarNodeSel = NSSelectorFromString("avatarNode")
-        if log {
-            if avatar.responds(to: avatarNodeSel),
-               let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject {
-                let worldSel = NSSelectorFromString("world")
-                if avatarNode.responds(to: worldSel) {
-                    let world = avatarNode.perform(worldSel)?.takeUnretainedValue()
-                    print("   🔍 avatarNode.world = \(String(describing: world))")
-                }
-            }
+            avatar.perform(bsSel, with: trackingInfo)
+            if shouldLog { print("   ✅ blendshapes via trackingInfo") }
         }
         
-        // Strategy: Use AvatarKit's own trackingInfo-based head pose method.
-        // Build trackingInfo from ARFrame data, then call applyHeadPoseWithTrackingInfo:
-        guard let trackInfoCls = trackInfoCls else {
-            if log { print("   → headPose: no trackInfoCls") }
-            return
-        }
-        
-        // Use dataWithARFrame:captureOrientation:interfaceOrientation: to build proper tracking data
-        // This is what AvatarKit uses internally
-        let dataFromFrameSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
-        guard let meta = object_getClass(trackInfoCls),
-              let method = class_getClassMethod(meta, dataFromFrameSel) else {
-            if log { print("   → headPose: dataWithARFrame: not found, trying manual") }
-            applyHeadPoseManual(from: anchor, to: avatar, log: log)
-            return
-        }
-        
-        // We need the ARFrame, not just the anchor
-        // The ARFrame is stored in lastFrame by the ARSession delegate
-        guard let frame = lastFrame else {
-            if log { print("   → headPose: no lastFrame available") }
-            return
-        }
-        
-        let imp = method_getImplementation(method)
-        // captureOrientation: 1 = portrait, interfaceOrientation: 1 = portrait
-        typealias DataFunc = @convention(c) (AnyClass, Selector, ARFrame, Int, Int) -> NSObject?
-        let dataFn = unsafeBitCast(imp, to: DataFunc.self)
-        guard let data = dataFn(trackInfoCls, dataFromFrameSel, frame, 1, 1) else {
-            if log { print("   → headPose: dataWithARFrame returned nil") }
-            return
-        }
-        
-        // Now create trackingInfo from data
-        let infoSel = NSSelectorFromString("trackingInfoWithTrackingData:")
-        guard let infoMethod = class_getClassMethod(meta, infoSel) else {
-            if log { print("   → headPose: trackingInfoWithTrackingData: not found") }
-            return
-        }
-        let infoImp = method_getImplementation(infoMethod)
-        typealias InfoFunc = @convention(c) (AnyClass, Selector, NSObject) -> NSObject?
-        let infoFn = unsafeBitCast(infoImp, to: InfoFunc.self)
-        guard let info = infoFn(trackInfoCls, infoSel, data) else {
-            if log { print("   → headPose: trackingInfoWithTrackingData returned nil") }
-            return
-        }
-        
-        // Call applyHeadPoseWithTrackingInfo:gazeCorrection:pointOfView:
+        // Apply head pose
         let poseSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:gazeCorrection:pointOfView:")
         if avatar.responds(to: poseSel),
            let poseMethod = class_getInstanceMethod(type(of: avatar), poseSel) {
             let poseImp = method_getImplementation(poseMethod)
             typealias PoseFunc = @convention(c) (NSObject, Selector, NSObject, Bool, NSObject?) -> Void
             let poseFn = unsafeBitCast(poseImp, to: PoseFunc.self)
-            poseFn(avatar, poseSel, info, false, nil)
-            if log { print("   → headPose via applyHeadPoseWithTrackingInfo ✅") }
-        } else {
-            if log { print("   → headPose: applyHeadPoseWithTrackingInfo not available") }
+            poseFn(avatar, poseSel, trackingInfo, false, nil)
+            if shouldLog { print("   ✅ headPose via applyHeadPoseWithTrackingInfo") }
         }
     }
     
-    /// Fallback: direct node manipulation
-    private func applyHeadPoseManual(from anchor: ARFaceAnchor, to avatar: NSObject, log: Bool) {
-        let avatarNodeSel = NSSelectorFromString("avatarNode")
-        guard avatar.responds(to: avatarNodeSel),
-              let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject else {
-            if log { print("   → headPose manual: avatar.avatarNode not available") }
-            return
-        }
+    /// Build AVTFaceTrackingInfo from ARFrame — call only ONCE per frame
+    private func buildTrackingInfo(from frame: ARFrame, log: Bool) -> NSObject? {
+        guard let trackInfoCls = trackInfoCls,
+              let meta = object_getClass(trackInfoCls) else { return nil }
         
-        let findSel = NSSelectorFromString("childNodeWithName:recursively:")
-        guard avatarNode.responds(to: findSel) else { return }
-        
-        let headJointName = "head_JNT" as NSString
-        guard let headJoint = avatarNode.perform(findSel, with: headJointName, with: NSNumber(value: true))?.takeUnretainedValue() as? NSObject else {
-            if log { print("   → headPose manual: head_JNT not found") }
-            return
-        }
-        
-        let setOrientationSel = NSSelectorFromString("setSimdOrientation:")
-        if headJoint.responds(to: setOrientationSel),
-           let method = class_getInstanceMethod(type(of: headJoint), setOrientationSel) {
+        // Try trackingInfoWithARFrame:inputOrientation:outputOrientation: first (simpler)
+        let directSel = NSSelectorFromString("trackingInfoWithARFrame:inputOrientation:outputOrientation:")
+        if let method = class_getClassMethod(meta, directSel) {
             let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (NSObject, Selector, simd_quatf) -> Void
+            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
             let fn = unsafeBitCast(imp, to: Func.self)
-            fn(headJoint, setOrientationSel, simd_quatf(anchor.transform))
+            // inputOrientation: 1 = portrait, outputOrientation: 1 = portrait
+            if let info = fn(trackInfoCls, directSel, frame, 1, 1) {
+                if log { print("   📦 trackingInfo via trackingInfoWithARFrame:inputOrientation:outputOrientation:") }
+                return info
+            }
         }
         
-        if log { print("   → headPose manual via head_JNT ✅") }
+        // Fallback: dataWithARFrame → trackingInfoWithTrackingData
+        let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
+        if let method = class_getClassMethod(meta, dataSel) {
+            let imp = method_getImplementation(method)
+            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
+            let fn = unsafeBitCast(imp, to: Func.self)
+            if let data = fn(trackInfoCls, dataSel, frame, 4, 1) {
+                // data might already be a trackingInfo (responds to trackingData)
+                let tdSel = NSSelectorFromString("trackingData")
+                if data.responds(to: tdSel) {
+                    if log { print("   📦 trackingInfo via dataWithARFrame (direct)") }
+                    return data
+                }
+            }
+        }
+        
+        return nil
     }
     
     /// Manual fallback: build TrackingData struct and create AVTFaceTrackingInfo
@@ -375,7 +261,11 @@ final class AvatarKitBridge {
                 return
             }
             if log { print("   ✅ Manual TrackingData → trackingInfo created") }
-            applyTrackingInfo(info, to: avatar, log: log)
+            let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
+            if avatar.responds(to: bsSel) {
+                avatar.perform(bsSel, with: info)
+                if log { print("   → applyBlendShapes ✅") }
+            }
         }
     }
     
