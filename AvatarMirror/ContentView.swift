@@ -1,4 +1,5 @@
 import SwiftUI
+import AvatarKit
 
 struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
@@ -7,7 +8,7 @@ struct ContentView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            AvatarViewRepresentable(viewModel: viewModel)
+            AvatarView(animoji: viewModel.currentAnimoji, tracking: viewModel.tracking)
                 .ignoresSafeArea()
             
             VStack {
@@ -15,21 +16,7 @@ struct ContentView: View {
                     Text(viewModel.debugStatus)
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.6))
-                    
                     Spacer()
-                    
-                    // Toggle tracking mode
-                    Button {
-                        viewModel.toggleTrackingMode()
-                    } label: {
-                        Text(viewModel.useHumanSenseKit ? "HSK" : "Built-in")
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(viewModel.useHumanSenseKit ? .green.opacity(0.3) : .blue.opacity(0.3))
-                            .clipShape(Capsule())
-                            .foregroundStyle(.white)
-                    }
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -39,15 +26,15 @@ struct ContentView: View {
                 // Animoji picker
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(AvatarKitBridge.availableAnimoji, id: \.self) { name in
+                        ForEach(AvatarView.availableAnimoji, id: \.self) { name in
                             Button {
-                                viewModel.switchToAnimoji(name)
+                                viewModel.currentAnimoji = name
                             } label: {
                                 Text(name.capitalized)
                                     .font(.caption2)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(viewModel.currentAnimoji == name && !viewModel.isMemoji ? .white.opacity(0.3) : .white.opacity(0.1))
+                                    .background(viewModel.currentAnimoji == name ? .white.opacity(0.3) : .white.opacity(0.1))
                                     .clipShape(Capsule())
                                     .foregroundStyle(.white)
                             }

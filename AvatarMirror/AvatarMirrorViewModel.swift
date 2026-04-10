@@ -1,21 +1,16 @@
 import SwiftUI
 import ARKit
 import AVFoundation
+import AvatarKit
 
 @MainActor
 final class AvatarMirrorViewModel: NSObject, ObservableObject {
-    @Published var isTracking = false
+    @Published var tracking = AvatarFaceTracking()
     @Published var currentAnimoji = "skull"
-    @Published var isMemoji = false
     @Published var debugStatus = "Starting..."
-    @Published var useHumanSenseKit = true
-    
-    let bridge = AvatarKitBridge()
-    let memojiEditor = MemojiEditorBridge()
     
     private var arSession: ARSession?
     private var arDelegate: ARDelegateProxy?
-    private var savedMemojiRecord: NSObject?
     
     func start() {
         guard ARFaceTrackingConfiguration.isSupported else {
@@ -26,30 +21,23 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         debugStatus = "Requesting camera..."
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             Task { @MainActor in
-                self?.debugStatus = granted ? "Camera OK" : "❌ Camera denied"
+                guard let self, granted else {
+                    self?.debugStatus = "❌ Camera denied"
+                    return
+                }
+                self.startTracking()
             }
         }
     }
     
-    func onViewReady() {
-        bridge.loadAnimoji(currentAnimoji)
-        
-        if useHumanSenseKit {
-            startExternalTracking()
-        } else {
-            bridge.startBuiltInTracking()
-            debugStatus = "Built-in tracking"
-        }
-    }
-    
-    // MARK: - External Tracking (our own ARSession)
-    
-    private func startExternalTracking() {
-        bridge.startExternalTracking()
-        
+    private func startTracking() {
         let session = ARSession()
         let proxy = ARDelegateProxy { [weak self] frame in
-            self?.handleARFrame(frame)
+            guard let face = frame.anchors.first(where: { $0 is ARFaceAnchor }) as? ARFaceAnchor else { return }
+            let t = AvatarFaceTracking(faceAnchor: face)
+            DispatchQueue.main.async {
+                self?.tracking = t
+            }
         }
         session.delegate = proxy
         self.arSession = session
@@ -59,90 +47,17 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         config.maximumNumberOfTrackedFaces = 1
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
         
-        debugStatus = "HSK tracking"
-        print("✅ External ARSession started")
-    }
-    
-    /// Called from ARDelegateProxy on ARSession's queue
-    nonisolated func handleARFrame(_ frame: ARFrame) {
-        let hasFace = frame.anchors.contains(where: { $0 is ARFaceAnchor })
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isTracking = hasFace
-            if hasFace {
-                self.bridge.applyARFrame(frame)
-            }
-        }
+        debugStatus = "Tracking"
     }
     
     func stop() {
         arSession?.pause()
         arSession = nil
         arDelegate = nil
-        bridge.stopTracking()
-    }
-    
-    // MARK: - Toggle
-    
-    func toggleTrackingMode() {
-        stop()
-        useHumanSenseKit.toggle()
-        onViewReady()
-    }
-    
-    // MARK: - Switching
-    
-    func switchToAnimoji(_ name: String) {
-        currentAnimoji = name
-        isMemoji = false
-        bridge.loadAnimoji(name)
-    }
-    
-    func switchToMemoji() {
-        isMemoji = true
-        bridge.loadMemoji()
-    }
-    
-    // MARK: - Memoji Creator
-    
-    func presentMemojiCreator() {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootVC = windowScene.windows.first?.rootViewController else { return }
-        
-        var topVC = rootVC
-        while let presented = topVC.presentedViewController {
-            topVC = presented
-        }
-        
-        // Fully tear down our tracking + view to avoid VFXWorld conflicts with editor
-        arSession?.pause()
-        (bridge.avtView as? UIView)?.removeFromSuperview()
-        
-        memojiEditor.presentCreator(from: topVC) { [weak self] record in
-            guard let self else { return }
-            
-            // Restore our view and resume tracking
-            // The parent SwiftUI view will re-add the AVTRecordView on next layout
-            if let session = self.arSession {
-                let config = ARFaceTrackingConfiguration()
-                config.isWorldTrackingEnabled = false
-                session.run(config, options: [.resetTracking, .removeExistingAnchors])
-            }
-            
-            guard let record else { return }
-            self.savedMemojiRecord = record
-            self.isMemoji = true
-            let avatarSel = NSSelectorFromString("avatar")
-            if record.responds(to: avatarSel),
-               let avatar = record.perform(avatarSel)?.takeUnretainedValue() as? NSObject {
-                self.bridge.avtView?.setValue(avatar, forKeyPath: "avatar")
-            }
-        }
     }
 }
 
-// MARK: - ARSession Delegate Proxy (non-isolated)
+// MARK: - ARSession Delegate Proxy
 
 final class ARDelegateProxy: NSObject, ARSessionDelegate, @unchecked Sendable {
     private let onFrame: (ARFrame) -> Void
@@ -153,22 +68,5 @@ final class ARDelegateProxy: NSObject, ARSessionDelegate, @unchecked Sendable {
     
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         onFrame(frame)
-    }
-    
-    func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-        let state: String
-        switch camera.trackingState {
-        case .notAvailable: state = "Not available"
-        case .limited(let reason):
-            switch reason {
-            case .initializing: state = "Initializing..."
-            case .excessiveMotion: state = "Motion"
-            case .insufficientFeatures: state = "Features"
-            case .relocalizing: state = "Relocalizing"
-            @unknown default: state = "Limited"
-            }
-        case .normal: state = "Tracking"
-        }
-        print("📷 Camera: \(state)")
     }
 }
