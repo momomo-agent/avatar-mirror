@@ -9,16 +9,15 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
     @Published var debugStatus = "Starting..."
-    @Published var useHumanSenseKit = true // Toggle between HumanSenseKit and built-in
+    @Published var useHumanSenseKit = true
     
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
     
     // HumanSenseKit for external tracking
     private var kit: HumanSenseKit?
-    private var displayLink: CADisplayLink?
     
-    // Direct ARSession as fallback
+    // Direct ARSession (used when HumanSenseKit doesn't expose ARFrame)
     private var arSession: ARSession?
     
     private var savedMemojiRecord: NSObject?
@@ -30,7 +29,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
         }
         
         debugStatus = "Requesting camera..."
-        
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
@@ -39,12 +37,11 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
         }
     }
     
-    /// Called by the view representable once AVTRecordView is created
     func onViewReady() {
         bridge.loadAnimoji(currentAnimoji)
         
         if useHumanSenseKit {
-            startHumanSenseKitTracking()
+            startHSKTracking()
         } else {
             bridge.startBuiltInTracking()
             debugStatus = "Built-in tracking"
@@ -53,52 +50,73 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
     
     // MARK: - HumanSenseKit Tracking
     
-    private func startHumanSenseKitTracking() {
+    private func startHSKTracking() {
         bridge.startExternalTracking()
         
-        kit = HumanSenseKit(enableHandGestures: false, enableSTT: false)
-        kit?.start()
+        // We need the raw ARFrame to pass to AvatarKit's trackingInfoWithARFrame:
+        // HumanSenseKit uses ARSession internally — we'll run our own ARSession
+        // and feed frames to both HumanSenseKit state and AvatarKit
+        let session = ARSession()
+        session.delegate = self
+        self.arSession = session
         
-        debugStatus = "HumanSenseKit tracking"
-        print("✅ HumanSenseKit started for external tracking")
+        let config = ARFaceTrackingConfiguration()
+        config.maximumNumberOfTrackedFaces = 1
+        session.run(config, options: [.resetTracking, .removeExistingAnchors])
         
-        // Display link to poll HumanSenseKit state
-        let link = CADisplayLink(target: self, selector: #selector(updateFromHSK))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
-        link.add(to: .main, forMode: .common)
-        self.displayLink = link
-    }
-    
-    private var frameCount = 0
-    
-    @objc private func updateFromHSK() {
-        guard let kit = kit else { return }
-        kit.state.update()
-        
-        isTracking = kit.state.isPresent
-        
-        frameCount += 1
-        if frameCount % 300 == 0 {
-            let hasAnchor = kit.currentFaceAnchor != nil
-            debugStatus = "HSK | present=\(isTracking) | anchor=\(hasAnchor)"
-        }
-        
-        if let anchor = kit.currentFaceAnchor {
-            bridge.applyFaceAnchor(anchor)
-        }
+        debugStatus = "HSK tracking (ARSession)"
+        print("✅ ARSession started for HSK + AvatarKit")
     }
     
     func stop() {
-        displayLink?.invalidate()
-        displayLink = nil
+        arSession?.pause()
+        arSession = nil
         kit?.stop()
         kit = nil
         bridge.stopTracking()
-        arSession?.pause()
-        arSession = nil
     }
     
-    // MARK: - Toggle Tracking Mode
+    // MARK: - ARSessionDelegate
+    
+    nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        // Pass the full ARFrame to AvatarKit — this is the key!
+        // trackingInfoWithARFrame: extracts face anchor + transform + blendshapes correctly
+        Task { @MainActor in
+            let hasFace = frame.anchors.contains(where: { $0 is ARFaceAnchor })
+            isTracking = hasFace
+            
+            if hasFace {
+                bridge.applyARFrame(frame)
+            }
+        }
+    }
+    
+    nonisolated func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        let state: String
+        switch camera.trackingState {
+        case .notAvailable: state = "Not available"
+        case .limited(let reason):
+            switch reason {
+            case .initializing: state = "Initializing..."
+            case .excessiveMotion: state = "Too much motion"
+            case .insufficientFeatures: state = "Insufficient features"
+            case .relocalizing: state = "Relocalizing"
+            @unknown default: state = "Limited"
+            }
+        case .normal: state = "Tracking"
+        }
+        Task { @MainActor in
+            debugStatus = "HSK | \(state)"
+        }
+    }
+    
+    nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
+        Task { @MainActor in
+            debugStatus = "❌ \(error.localizedDescription)"
+        }
+    }
+    
+    // MARK: - Toggle
     
     func toggleTrackingMode() {
         stop()

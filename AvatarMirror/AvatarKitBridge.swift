@@ -4,23 +4,22 @@ import ARKit
 /// Bridge between ARKit face tracking and Apple's private AvatarKit framework.
 /// Two modes:
 /// 1. Built-in: transitionToCustomFaceTracking (AVTRecordView manages its own ARSession)
-/// 2. External: applyFaceAnchor() with data from HumanSenseKit
+/// 2. External: applyARFrame() with data from HumanSenseKit's ARSession
 @MainActor
 final class AvatarKitBridge {
     
     enum TrackingMode {
-        case builtIn    // AVTRecordView manages ARSession
-        case external   // We feed ARFaceAnchor data manually
+        case builtIn
+        case external
     }
     
-    private(set) var avtView: NSObject? // AVTRecordView (SCNView subclass)
+    private(set) var avtView: NSObject?
     private var avatar: NSObject?
     private var frameworkLoaded = false
     private(set) var trackingMode: TrackingMode = .external
     
-    // Cached blendshape index mapping: ARKit name -> AvatarKit index
-    private var blendShapeIndexMap: [String: Int] = [:]
-    private var blendShapeCount: Int = 51
+    // Cached class references
+    private var trackInfoCls: AnyClass?
     
     // MARK: - Setup
     
@@ -31,6 +30,7 @@ final class AvatarKitBridge {
         if !frameworkLoaded {
             print("❌ Failed to load AvatarKit: \(String(cString: dlerror()))")
         }
+        trackInfoCls = NSClassFromString("AVTFaceTrackingInfo")
         return frameworkLoaded
     }
     
@@ -47,13 +47,7 @@ final class AvatarKitBridge {
         view.backgroundColor = .clear
         
         // Enable continuous rendering for manual updates
-        let renderSel = NSSelectorFromString("setRendersContinuously:")
-        if (view as NSObject).responds(to: renderSel) {
-            let method = class_getInstanceMethod(type(of: view as NSObject), renderSel)!
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (NSObject, Selector, Bool) -> Void
-            unsafeBitCast(imp, to: Func.self)(view as NSObject, renderSel, true)
-        }
+        setBool(on: view as NSObject, selector: "setRendersContinuously:", value: true)
         
         print("✅ Created AVTRecordView")
         return view
@@ -80,12 +74,8 @@ final class AvatarKitBridge {
             }
             fn(view, sel, 0.3, 0, true, startBlock as AnyObject, completionBlock as AnyObject)
         } else {
-            // Fallback to startPreviewing
             let previewSel = NSSelectorFromString("startPreviewing")
-            if view.responds(to: previewSel) {
-                view.perform(previewSel)
-                print("✅ startPreviewing (fallback)")
-            }
+            if view.responds(to: previewSel) { view.perform(previewSel) }
         }
     }
     
@@ -95,151 +85,144 @@ final class AvatarKitBridge {
         if view.responds(to: sel) { view.perform(sel) }
     }
     
-    // MARK: - External Face Tracking (HumanSenseKit data)
+    // MARK: - External Face Tracking (HumanSenseKit)
     
     func startExternalTracking() {
         trackingMode = .external
-        print("✅ External tracking mode — waiting for ARFaceAnchor data")
+        print("✅ External tracking mode — feed ARFrame via applyARFrame()")
     }
     
-    /// Build the blendshape index mapping by querying the avatar
-    private func buildBlendShapeMapping() {
-        guard let avatar = avatar else { return }
+    /// Apply an ARFrame directly — uses AVTFaceTrackingInfo's +trackingInfoWithARFrame: factory
+    /// This is the correct way: AvatarKit creates its own tracking info from the full ARFrame,
+    /// including face anchor transform, blendshapes, and camera orientation.
+    func applyARFrame(_ frame: ARFrame) {
+        guard let avatar = avatar, let trackInfoCls = trackInfoCls else { return }
         
-        let sel = NSSelectorFromString("blendShapeIndexForARKitBlendShapeName:")
-        guard avatar.responds(to: sel),
-              let method = class_getInstanceMethod(type(of: avatar), sel) else {
-            print("⚠️ blendShapeIndexForARKitBlendShapeName: not available")
-            return
-        }
+        // Get device orientation for correct coordinate mapping
+        let interfaceOrientation = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation ?? .portrait
+        let orientationRaw = interfaceOrientation.rawValue
         
-        let imp = method_getImplementation(method)
-        typealias Func = @convention(c) (NSObject, Selector, NSString) -> Int
-        let fn = unsafeBitCast(imp, to: Func.self)
-        
-        let arkitNames: [ARFaceAnchor.BlendShapeLocation] = [
-            .browDownLeft, .browDownRight, .browInnerUp, .browOuterUpLeft, .browOuterUpRight,
-            .cheekPuff, .cheekSquintLeft, .cheekSquintRight,
-            .eyeBlinkLeft, .eyeBlinkRight, .eyeLookDownLeft, .eyeLookDownRight,
-            .eyeLookInLeft, .eyeLookInRight, .eyeLookOutLeft, .eyeLookOutRight,
-            .eyeLookUpLeft, .eyeLookUpRight, .eyeSquintLeft, .eyeSquintRight,
-            .eyeWideLeft, .eyeWideRight,
-            .jawForward, .jawLeft, .jawOpen, .jawRight,
-            .mouthClose, .mouthDimpleLeft, .mouthDimpleRight, .mouthFrownLeft, .mouthFrownRight,
-            .mouthFunnel, .mouthLeft, .mouthLowerDownLeft, .mouthLowerDownRight,
-            .mouthPressLeft, .mouthPressRight, .mouthPucker, .mouthRight,
-            .mouthRollLower, .mouthRollUpper, .mouthShrugLower, .mouthShrugUpper,
-            .mouthSmileLeft, .mouthSmileRight, .mouthStretchLeft, .mouthStretchRight,
-            .mouthUpperUpLeft, .mouthUpperUpRight,
-            .noseSneerLeft, .noseSneerRight,
-            .tongueOut
-        ]
-        
-        blendShapeIndexMap.removeAll()
-        for location in arkitNames {
-            let name = location.rawValue
-            let index = fn(avatar, sel, name as NSString)
-            if index >= 0 {
-                blendShapeIndexMap[name] = index
-            }
-        }
-        
-        print("✅ Built blendshape mapping: \(blendShapeIndexMap.count) entries")
-        if let maxIdx = blendShapeIndexMap.values.max() {
-            blendShapeCount = maxIdx + 1
-            print("   Max index: \(maxIdx), count: \(blendShapeCount)")
-        }
-    }
-    
-    /// Apply face anchor data from HumanSenseKit to the avatar
-    func applyFaceAnchor(_ anchor: ARFaceAnchor) {
-        guard let avatar = avatar else { return }
-        
-        // Method 1: Use _applyBlendShapes:parameters: with correct index mapping
-        let applySel = NSSelectorFromString("_applyBlendShapes:parameters:")
-        if avatar.responds(to: applySel), !blendShapeIndexMap.isEmpty {
-            var blendShapes = [Float](repeating: 0, count: blendShapeCount)
-            
-            for (name, value) in anchor.blendShapes {
-                if let index = blendShapeIndexMap[name.rawValue] {
-                    blendShapes[index] = value.floatValue
-                }
-            }
-            
-            let method = class_getInstanceMethod(type(of: avatar), applySel)!
+        // Try +trackingInfoWithARFrame:captureOrientation:interfaceOrientation:
+        let sel3 = NSSelectorFromString("trackingInfoWithARFrame:captureOrientation:interfaceOrientation:")
+        if let meta = object_getClass(trackInfoCls),
+           let method = class_getClassMethod(meta, sel3) {
             let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (NSObject, Selector, UnsafePointer<Float>, UnsafePointer<Float>) -> Void
+            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
             let fn = unsafeBitCast(imp, to: Func.self)
             
-            blendShapes.withUnsafeBufferPointer { bsPtr in
-                // parameters = same as blendshapes for now (1 element but pass full array)
-                fn(avatar, applySel, bsPtr.baseAddress!, bsPtr.baseAddress!)
+            if let info = fn(trackInfoCls, sel3, frame, orientationRaw, orientationRaw) {
+                applyTrackingInfo(info, to: avatar)
+                return
             }
         }
         
-        // Method 2: Apply head pose via _applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:
-        let poseSel = NSSelectorFromString("_applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:")
-        if avatar.responds(to: poseSel) {
-            // Build tracking data with head transform from ARFaceAnchor
-            applyHeadPose(anchor: anchor, avatar: avatar)
+        // Try +dataWithARFrame:captureOrientation:interfaceOrientation:
+        let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
+        if let meta = object_getClass(trackInfoCls),
+           let method = class_getClassMethod(meta, dataSel) {
+            let imp = method_getImplementation(method)
+            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
+            let fn = unsafeBitCast(imp, to: Func.self)
+            
+            if let info = fn(trackInfoCls, dataSel, frame, orientationRaw, orientationRaw) {
+                applyTrackingInfo(info, to: avatar)
+                return
+            }
+        }
+        
+        // Fallback: extract face anchor and apply manually
+        if let faceAnchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first {
+            applyFaceAnchorViaTrackingInfo(faceAnchor)
         }
     }
     
-    private func applyHeadPose(anchor: ARFaceAnchor, avatar: NSObject) {
-        // The tracking data struct: Double(timestamp) + Bool(isTracking) + pad + [51f] + [51f] + [1f] + [1f]
-        // But for head pose, the key data is the transform matrix from ARFaceAnchor
+    /// Apply face anchor via AVTFaceTrackingInfo (fallback when ARFrame methods don't work)
+    func applyFaceAnchorViaTrackingInfo(_ anchor: ARFaceAnchor) {
+        guard let avatar = avatar, let trackInfoCls = trackInfoCls else { return }
         
-        // Try applyHeadPoseWithTrackingInfo: which uses AVTFaceTrackingInfo
-        let infoSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:")
-        guard avatar.responds(to: infoSel) else { return }
-        guard let trackInfoCls = NSClassFromString("AVTFaceTrackingInfo") else { return }
+        // Use +trackingInfoWithTrackingData: with correct struct layout
+        let sel = NSSelectorFromString("trackingInfoWithTrackingData:")
+        guard let method = class_getClassMethod(trackInfoCls, sel) else { return }
+        let imp = method_getImplementation(method)
         
-        // Build TrackingData buffer matching the struct layout: dB[51f][51f][1f][1f]
-        // d = Double timestamp (8 bytes)
-        // B = Bool isTracking (1 byte) + 3 bytes padding
-        // [51f] = smooth blendshapes (204 bytes)
-        // [51f] = raw blendshapes (204 bytes)
-        // [1f] = smooth parameters (4 bytes)
-        // [1f] = raw parameters (4 bytes)
-        // Total = 8 + 4 + 204 + 204 + 4 + 4 = 428 bytes
+        // Struct layout from runtime dump:
+        // {?="timestamp"d "translation""orientation""cameraSpace"B
+        //    "blendShapeWeights_smooth"[51f] "blendShapeWeights_raw"[51f]
+        //    "parameters_smooth"[1f] "parameters_raw"[1f]}
+        //
+        // d = Double (8 bytes) — timestamp
+        // B = Bool (1 byte) — cameraSpace (isTracking)
+        // pad to 4-byte alignment (3 bytes)
+        // [51f] = 204 bytes — smooth blendshapes
+        // [51f] = 204 bytes — raw blendshapes
+        // [1f] = 4 bytes — smooth parameters
+        // [1f] = 4 bytes — raw parameters
+        // Total: 8 + 1 + 3 + 204 + 204 + 4 + 4 = 428 bytes
+        //
+        // BUT: "translation" and "orientation" appear between d and B with no type encoding.
+        // These might be simd types that ObjC can't encode. Let's check if the struct is actually bigger.
+        // The ivar offset is 16 (after isa+refcount), and _rawTransform is at offset 496.
+        // So _trackingData size = 496 - 16 = 480 bytes!
+        // Extra 52 bytes = likely simd_float3 translation (12) + simd_quatf orientation (16) + padding
+        // Revised layout:
+        // Double timestamp (8)
+        // simd_float3 translation (12) + pad (4) = 16
+        // simd_quatf orientation (16)
+        // Bool cameraSpace (1) + pad (3) = 4
+        // [51f] smooth (204)
+        // [51f] raw (204)
+        // [1f] smooth params (4)
+        // [1f] raw params (4)
+        // Total: 8 + 16 + 16 + 4 + 204 + 204 + 4 + 4 = 460... not 480
+        //
+        // Let's try the simpler approach: 428 bytes as the property encoding suggests
         
-        var buffer = [UInt8](repeating: 0, count: 428)
+        let bufferSize = 428
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
         
         buffer.withUnsafeMutableBytes { raw in
             let base = raw.baseAddress!
             
-            // timestamp
+            // timestamp (offset 0, 8 bytes)
             var ts = CACurrentMediaTime()
             memcpy(base, &ts, 8)
             
-            // isTracking
+            // isTracking/cameraSpace (offset 8, 1 byte)
             base.storeBytes(of: UInt8(1), toByteOffset: 8, as: UInt8.self)
             
-            // Fill blendshapes using correct index mapping
-            for (name, value) in anchor.blendShapes {
-                if let index = blendShapeIndexMap[name.rawValue], index < 51 {
+            // blendShapeWeights_smooth (offset 12, 51 * 4 = 204 bytes)
+            // Use ARKit's rawValue alphabetical order (this is what AvatarKit expects)
+            let allLocations = anchor.blendShapes
+            for (location, value) in allLocations {
+                // Map ARKit blendshape to AvatarKit index
+                if let idx = Self.arkitBlendShapeOrder[location.rawValue], idx < 51 {
                     var val = value.floatValue
-                    // smooth
-                    memcpy(base + 12 + index * 4, &val, 4)
-                    // raw
-                    memcpy(base + 216 + index * 4, &val, 4)
+                    memcpy(base + 12 + idx * 4, &val, 4)
+                    // Also fill raw
+                    memcpy(base + 216 + idx * 4, &val, 4)
                 }
             }
         }
         
-        // Create AVTFaceTrackingInfo
-        let createSel = NSSelectorFromString("trackingInfoWithTrackingData:")
-        guard let createMethod = class_getClassMethod(trackInfoCls, createSel) else { return }
-        let createImp = method_getImplementation(createMethod)
-        
         buffer.withUnsafeBytes { raw in
-            typealias CreateFunc = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
-            let fn = unsafeBitCast(createImp, to: CreateFunc.self)
-            guard let info = fn(trackInfoCls, createSel, raw.baseAddress!) else { return }
-            
-            // Apply both blendshapes and head pose via tracking info
-            avatar.perform(NSSelectorFromString("applyBlendShapesWithTrackingInfo:"), with: info)
-            avatar.perform(NSSelectorFromString("applyHeadPoseWithTrackingInfo:"), with: info)
+            typealias Func = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
+            let fn = unsafeBitCast(imp, to: Func.self)
+            guard let info = fn(trackInfoCls, sel, raw.baseAddress!) else { return }
+            applyTrackingInfo(info, to: avatar)
+        }
+    }
+    
+    private func applyTrackingInfo(_ info: NSObject, to avatar: NSObject) {
+        let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
+        if avatar.responds(to: bsSel) {
+            avatar.perform(bsSel, with: info)
+        }
+        
+        let poseSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:")
+        if avatar.responds(to: poseSel) {
+            avatar.perform(poseSel, with: info)
         }
     }
     
@@ -267,10 +250,6 @@ final class AvatarKitBridge {
         
         self.avatar = animoji
         avtView?.setValue(animoji, forKeyPath: "avatar")
-        
-        // Build blendshape mapping for this avatar
-        buildBlendShapeMapping()
-        
         print("✅ Loaded animoji: \(name)")
     }
     
@@ -295,7 +274,6 @@ final class AvatarKitBridge {
         
         self.avatar = memoji
         avtView?.setValue(memoji, forKeyPath: "avatar")
-        buildBlendShapeMapping()
         print("✅ Loaded random memoji")
     }
     
@@ -314,5 +292,42 @@ final class AvatarKitBridge {
             "pig", "poo", "rabbit", "robot", "shark", "skull",
             "tiger", "trex", "unicorn"
         ]
+    }()
+    
+    // MARK: - Helpers
+    
+    private func setBool(on obj: NSObject, selector: String, value: Bool) {
+        let sel = NSSelectorFromString(selector)
+        guard obj.responds(to: sel) else { return }
+        let method = class_getInstanceMethod(type(of: obj), sel)!
+        let imp = method_getImplementation(method)
+        typealias Func = @convention(c) (NSObject, Selector, Bool) -> Void
+        unsafeBitCast(imp, to: Func.self)(obj, sel, value)
+    }
+    
+    // ARKit blendshape rawValue -> AvatarKit index (alphabetical order of ARKit names)
+    // ARKit has 52 blendshapes, AvatarKit uses 51 (tongueOut might be excluded)
+    static let arkitBlendShapeOrder: [String: Int] = {
+        let names = [
+            "browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight",
+            "cheekPuff", "cheekSquintLeft", "cheekSquintRight",
+            "eyeBlinkLeft", "eyeBlinkRight", "eyeLookDownLeft", "eyeLookDownRight",
+            "eyeLookInLeft", "eyeLookInRight", "eyeLookOutLeft", "eyeLookOutRight",
+            "eyeLookUpLeft", "eyeLookUpRight", "eyeSquintLeft", "eyeSquintRight",
+            "eyeWideLeft", "eyeWideRight",
+            "jawForward", "jawLeft", "jawOpen", "jawRight",
+            "mouthClose", "mouthDimpleLeft", "mouthDimpleRight", "mouthFrownLeft", "mouthFrownRight",
+            "mouthFunnel", "mouthLeft", "mouthLowerDownLeft", "mouthLowerDownRight",
+            "mouthPressLeft", "mouthPressRight", "mouthPucker", "mouthRight",
+            "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper",
+            "mouthSmileLeft", "mouthSmileRight", "mouthStretchLeft", "mouthStretchRight",
+            "mouthUpperUpLeft", "mouthUpperUpRight",
+            "noseSneerLeft", "noseSneerRight",
+        ]
+        var map: [String: Int] = [:]
+        for (i, name) in names.enumerated() {
+            map[name] = i
+        }
+        return map
     }()
 }
