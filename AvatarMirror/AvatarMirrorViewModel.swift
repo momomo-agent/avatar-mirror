@@ -1,8 +1,9 @@
 import SwiftUI
 import ARKit
+import HumanSenseKit
 
 @MainActor
-final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate {
+final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var isTracking = false
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
@@ -11,45 +12,26 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
     
-    private var arSession: ARSession?
+    private var kit: HumanSenseKit?
+    private var displayLink: CADisplayLink?
     private var savedMemojiRecord: NSObject?
     
     func start() {
-        guard ARFaceTrackingConfiguration.isSupported else {
-            print("⚠️ Face tracking not supported on this device")
-            // Still load the animoji for display
-            bridge.loadAnimoji(currentAnimoji)
-            return
-        }
+        kit = HumanSenseKit(enableHandGestures: false, enableSTT: false)
+        kit?.start()
         
-        let session = ARSession()
-        session.delegate = self
-        self.arSession = session
-        
-        let config = ARFaceTrackingConfiguration()
-        config.maximumNumberOfTrackedFaces = 1
-        session.run(config)
+        let link = CADisplayLink(target: self, selector: #selector(update))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
+        link.add(to: .main, forMode: .common)
+        self.displayLink = link
         
         bridge.loadAnimoji(currentAnimoji)
     }
     
     func stop() {
-        arSession?.pause()
-        arSession = nil
-    }
-    
-    // MARK: - ARSessionDelegate
-    
-    nonisolated func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-        guard let faceAnchor = anchors.compactMap({ $0 as? ARFaceAnchor }).first else { return }
-        Task { @MainActor in
-            isTracking = faceAnchor.isTracked
-            bridge.applyFaceAnchor(faceAnchor)
-        }
-    }
-    
-    nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
-        print("❌ AR session failed: \(error)")
+        displayLink?.invalidate()
+        displayLink = nil
+        kit?.stop()
     }
     
     // MARK: - Switching
@@ -97,6 +79,18 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
                 avtView.perform(NSSelectorFromString("setAvatar:"), with: avatar)
                 print("✅ Loaded saved memoji")
             }
+        }
+    }
+    
+    // MARK: - Update Loop
+    
+    @objc private func update() {
+        guard let kit = kit else { return }
+        kit.state.update()
+        isTracking = kit.state.isPresent
+        
+        if let anchor = kit.currentFaceAnchor {
+            bridge.applyFaceAnchor(anchor)
         }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import HumanSenseKit
 
 struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
@@ -11,7 +12,6 @@ struct ContentView: View {
                 .ignoresSafeArea()
             
             VStack {
-                // Top bar
                 HStack {
                     Circle()
                         .fill(viewModel.isTracking ? .green : .red)
@@ -52,7 +52,6 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // Bottom picker
                 if viewModel.isMemoji {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {

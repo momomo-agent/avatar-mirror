@@ -26,7 +26,14 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
         Release:
           CODE_SIGN_IDENTITY: "Apple Distribution"
+    dependencies:
+      - package: HumanSenseKit
     entitlements:
       path: AvatarMirror/AvatarMirror.entitlements
       properties:
         com.apple.security.app-sandbox: true
+
+packages:
+  HumanSenseKit:
+    url: https://github.com/momomo-agent/HumanSenseKit.git
+    from: "1.2.0"
