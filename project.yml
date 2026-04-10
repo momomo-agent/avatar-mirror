@@ -45,4 +45,4 @@ packages:
     from: "1.2.0"
   AvatarKit:
     url: https://github.com/momomo-agent/AvatarKit.git
-    from: "0.6.3"
+    from: "0.6.4"
