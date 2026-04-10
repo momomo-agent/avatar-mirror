@@ -1,10 +1,9 @@
 import SwiftUI
 import ARKit
 import AVFoundation
-import HumanSenseKit
 
 @MainActor
-final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate {
+final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var isTracking = false
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
@@ -14,12 +13,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
     
-    // HumanSenseKit for external tracking
-    private var kit: HumanSenseKit?
-    
-    // Direct ARSession (used when HumanSenseKit doesn't expose ARFrame)
     private var arSession: ARSession?
-    
+    private var arDelegate: ARDelegateProxy?
     private var savedMemojiRecord: NSObject?
     
     func start() {
@@ -31,8 +26,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
         debugStatus = "Requesting camera..."
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             Task { @MainActor in
-                guard let self else { return }
-                self.debugStatus = granted ? "Camera OK" : "❌ Camera denied"
+                self?.debugStatus = granted ? "Camera OK" : "❌ Camera denied"
             }
         }
     }
@@ -41,79 +35,52 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
         bridge.loadAnimoji(currentAnimoji)
         
         if useHumanSenseKit {
-            startHSKTracking()
+            startExternalTracking()
         } else {
             bridge.startBuiltInTracking()
             debugStatus = "Built-in tracking"
         }
     }
     
-    // MARK: - HumanSenseKit Tracking
+    // MARK: - External Tracking (our own ARSession)
     
-    private func startHSKTracking() {
+    private func startExternalTracking() {
         bridge.startExternalTracking()
         
-        // We need the raw ARFrame to pass to AvatarKit's trackingInfoWithARFrame:
-        // HumanSenseKit uses ARSession internally — we'll run our own ARSession
-        // and feed frames to both HumanSenseKit state and AvatarKit
         let session = ARSession()
-        session.delegate = self
+        let proxy = ARDelegateProxy { [weak self] frame in
+            self?.handleARFrame(frame)
+        }
+        session.delegate = proxy
         self.arSession = session
+        self.arDelegate = proxy
         
         let config = ARFaceTrackingConfiguration()
         config.maximumNumberOfTrackedFaces = 1
         session.run(config, options: [.resetTracking, .removeExistingAnchors])
         
-        debugStatus = "HSK tracking (ARSession)"
-        print("✅ ARSession started for HSK + AvatarKit")
+        debugStatus = "HSK tracking"
+        print("✅ External ARSession started")
+    }
+    
+    /// Called from ARDelegateProxy on ARSession's queue
+    nonisolated func handleARFrame(_ frame: ARFrame) {
+        let hasFace = frame.anchors.contains(where: { $0 is ARFaceAnchor })
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isTracking = hasFace
+            if hasFace {
+                self.bridge.applyARFrame(frame)
+            }
+        }
     }
     
     func stop() {
         arSession?.pause()
         arSession = nil
-        kit?.stop()
-        kit = nil
+        arDelegate = nil
         bridge.stopTracking()
-    }
-    
-    // MARK: - ARSessionDelegate
-    
-    nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
-        // Pass the full ARFrame to AvatarKit — this is the key!
-        // trackingInfoWithARFrame: extracts face anchor + transform + blendshapes correctly
-        Task { @MainActor in
-            let hasFace = frame.anchors.contains(where: { $0 is ARFaceAnchor })
-            isTracking = hasFace
-            
-            if hasFace {
-                bridge.applyARFrame(frame)
-            }
-        }
-    }
-    
-    nonisolated func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-        let state: String
-        switch camera.trackingState {
-        case .notAvailable: state = "Not available"
-        case .limited(let reason):
-            switch reason {
-            case .initializing: state = "Initializing..."
-            case .excessiveMotion: state = "Too much motion"
-            case .insufficientFeatures: state = "Insufficient features"
-            case .relocalizing: state = "Relocalizing"
-            @unknown default: state = "Limited"
-            }
-        case .normal: state = "Tracking"
-        }
-        Task { @MainActor in
-            debugStatus = "HSK | \(state)"
-        }
-    }
-    
-    nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
-        Task { @MainActor in
-            debugStatus = "❌ \(error.localizedDescription)"
-        }
     }
     
     // MARK: - Toggle
@@ -158,5 +125,36 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
                 self.bridge.avtView?.setValue(avatar, forKeyPath: "avatar")
             }
         }
+    }
+}
+
+// MARK: - ARSession Delegate Proxy (non-isolated)
+
+final class ARDelegateProxy: NSObject, ARSessionDelegate, @unchecked Sendable {
+    private let onFrame: (ARFrame) -> Void
+    
+    init(onFrame: @escaping (ARFrame) -> Void) {
+        self.onFrame = onFrame
+    }
+    
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        onFrame(frame)
+    }
+    
+    func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        let state: String
+        switch camera.trackingState {
+        case .notAvailable: state = "Not available"
+        case .limited(let reason):
+            switch reason {
+            case .initializing: state = "Initializing..."
+            case .excessiveMotion: state = "Motion"
+            case .insufficientFeatures: state = "Features"
+            case .relocalizing: state = "Relocalizing"
+            @unknown default: state = "Limited"
+            }
+        case .normal: state = "Tracking"
+        }
+        print("📷 Camera: \(state)")
     }
 }
