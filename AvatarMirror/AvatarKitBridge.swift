@@ -98,17 +98,19 @@ final class AvatarKitBridge {
         let faceAnchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
         guard let faceAnchor = faceAnchors.first else { return }
         
-        if shouldLog {
-            let bs = faceAnchor.blendShapes
-            print("🎯 Frame #\(frameCount): jawOpen=\(bs[.jawOpen]?.floatValue ?? -1)")
-        }
-        
-        let orientationRaw = UIApplication.shared.connectedScenes
+        let interfaceOrientationRaw = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.interfaceOrientation.rawValue ?? 1
         
+        // captureOrientation for front camera in portrait = .landscapeRight (4)
+        let captureOrientationRaw = 4
+        
+        if shouldLog {
+            let bs = faceAnchor.blendShapes
+            print("🎯 Frame #\(frameCount): jawOpen=\(bs[.jawOpen]?.floatValue ?? -1) captureOri=\(captureOrientationRaw) interfaceOri=\(interfaceOrientationRaw)")
+        }
+        
         // Step 1: Get tracking DATA from ARFrame
-        // dataWithARFrame: returns NSData/NSInlineData (raw bytes of TrackingData struct)
         let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
         if let meta = object_getClass(trackInfoCls),
            let method = class_getClassMethod(meta, dataSel) {
@@ -116,7 +118,7 @@ final class AvatarKitBridge {
             typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
             let fn = unsafeBitCast(imp, to: Func.self)
             
-            if let data = fn(trackInfoCls, dataSel, frame, orientationRaw, orientationRaw) {
+            if let data = fn(trackInfoCls, dataSel, frame, captureOrientationRaw, interfaceOrientationRaw) {
                 if shouldLog {
                     print("   ✅ dataWithARFrame returned: \(type(of: data)) length=\((data as? Data)?.count ?? -1)")
                     // Check if it's NSData
@@ -166,7 +168,7 @@ final class AvatarKitBridge {
             typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
             let fn = unsafeBitCast(imp, to: Func.self)
             
-            if let result = fn(trackInfoCls, infoFrameSel, frame, orientationRaw, orientationRaw) {
+            if let result = fn(trackInfoCls, infoFrameSel, frame, captureOrientationRaw, interfaceOrientationRaw) {
                 if shouldLog { print("   trackingInfoWithARFrame returned: \(type(of: result))") }
                 
                 // If it's NSData, extract bytes and create tracking info
@@ -253,15 +255,18 @@ final class AvatarKitBridge {
             memcpy(base, &ts, 8)
             
             // translation from face anchor transform (offset 8, simd_float3 = 12 bytes)
+            // Mirror X for front camera (selfie mirror effect)
             var translation = simd_float3(
-                anchor.transform.columns.3.x,
+                -anchor.transform.columns.3.x,  // mirror X
                 anchor.transform.columns.3.y,
                 anchor.transform.columns.3.z
             )
             memcpy(base + 8, &translation, 12)
             
             // orientation from face anchor transform (offset 24, simd_quatf = 16 bytes)
-            var orientation = simd_quatf(anchor.transform)
+            // Mirror around Y axis: negate x and z components of quaternion
+            let q = simd_quatf(anchor.transform)
+            var orientation = simd_quatf(ix: -q.imag.x, iy: q.imag.y, iz: -q.imag.z, r: q.real)
             memcpy(base + 24, &orientation, 16)
             
             // cameraSpace = true (offset 40)
