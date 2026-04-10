@@ -28,10 +28,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
       configs:
         Debug:
-          CODE_SIGN_IDENTITY: "-"
           CODE_SIGN_STYLE: Automatic
         Release:
-          CODE_SIGN_IDENTITY: "Apple Distribution"
           CODE_SIGN_STYLE: Automatic
     dependencies:
       - package: HumanSenseKit
