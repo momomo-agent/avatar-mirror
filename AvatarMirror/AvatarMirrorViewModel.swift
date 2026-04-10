@@ -115,15 +115,15 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             topVC = presented
         }
         
-        // Pause our ARSession to avoid VFXWorld conflicts with the editor's own session
+        // Fully tear down our tracking + view to avoid VFXWorld conflicts with editor
         arSession?.pause()
+        (bridge.avtView as? UIView)?.removeFromSuperview()
         
         memojiEditor.presentCreator(from: topVC) { [weak self] record in
-            guard let self else {
-                return
-            }
+            guard let self else { return }
             
-            // Resume our ARSession
+            // Restore our view and resume tracking
+            // The parent SwiftUI view will re-add the AVTRecordView on next layout
             if let session = self.arSession {
                 let config = ARFaceTrackingConfiguration()
                 config.isWorldTrackingEnabled = false
