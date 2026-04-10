@@ -6,11 +6,10 @@ import ARKit
 final class AvatarKitBridge {
     
     enum AvatarType {
-        case animoji(String)  // name like "tiger", "cat"
-        case memoji           // random memoji with body
+        case animoji(String)
+        case memoji
     }
     
-    // MARK: - Private AvatarKit references
     private(set) var avtView: NSObject?
     private var avatar: NSObject?
     private var currentType: AvatarType = .animoji("tiger")
@@ -33,7 +32,7 @@ final class AvatarKitBridge {
         .cheekPuff, .cheekSquintLeft, .cheekSquintRight,
     ]
     
-    // MARK: - Tracking data struct
+    // MARK: - Tracking data struct (must match AvatarKit's expected layout)
     struct TrackingData {
         var timestamp: Double = 0
         var isTracking: Bool = true
@@ -93,16 +92,48 @@ final class AvatarKitBridge {
     
     func loadAnimoji(_ name: String) {
         guard ensureFramework() else { return }
-        guard let cls = NSClassFromString("AVTAnimoji") else { return }
+        guard let cls = NSClassFromString("AVTAnimoji") else {
+            print("❌ AVTAnimoji not found")
+            return
+        }
         
-        let sel = NSSelectorFromString("initWithName:error:")
-        guard let instance = cls.alloc() as? NSObject, instance.responds(to: sel) else { return }
+        // Use ObjC runtime to alloc+init since Swift's alloc() is unavailable
+        let allocSel = NSSelectorFromString("alloc")
+        guard let allocMethod = class_getClassMethod(cls, allocSel) else { return }
+        let allocImp = method_getImplementation(allocMethod)
+        typealias AllocFunc = @convention(c) (AnyClass, Selector) -> NSObject
+        let instance = unsafeBitCast(allocImp, to: AllocFunc.self)(cls, allocSel)
         
-        let result = instance.perform(sel, with: name, with: nil)?.takeUnretainedValue() as? NSObject
-        self.avatar = result
+        // initWithName:error:
+        let initSel = NSSelectorFromString("initWithName:error:")
+        guard instance.responds(to: initSel),
+              let method = class_getInstanceMethod(type(of: instance), initSel) else {
+            print("❌ initWithName:error: not found")
+            return
+        }
+        
+        let imp = method_getImplementation(method)
+        typealias InitFunc = @convention(c) (NSObject, Selector, NSString, UnsafeMutablePointer<NSObject?>?) -> NSObject?
+        let initFn = unsafeBitCast(imp, to: InitFunc.self)
+        
+        var error: NSObject?
+        let result = initFn(instance, initSel, name as NSString, &error)
+        
+        if let error = error {
+            print("❌ Animoji init error: \(error)")
+            return
+        }
+        
+        guard let animoji = result else {
+            print("❌ Animoji init returned nil for: \(name)")
+            return
+        }
+        
+        self.avatar = animoji
         self.currentType = .animoji(name)
         
-        avtView?.perform(NSSelectorFromString("setAvatar:"), with: result)
+        // Set avatar on view — don't apply any pose transition
+        avtView?.perform(NSSelectorFromString("setAvatar:"), with: animoji)
         print("✅ Loaded animoji: \(name)")
     }
     
@@ -110,24 +141,37 @@ final class AvatarKitBridge {
         guard ensureFramework() else { return }
         guard let cls = NSClassFromString("AVTMemoji") else { return }
         
-        guard let instance = cls.alloc() as? NSObject else { return }
-        instance.perform(NSSelectorFromString("randomize"))
+        // Alloc via runtime
+        let allocSel = NSSelectorFromString("alloc")
+        guard let allocMethod = class_getClassMethod(cls, allocSel) else { return }
+        let allocImp = method_getImplementation(allocMethod)
+        typealias AllocFunc = @convention(c) (AnyClass, Selector) -> NSObject
+        let instance = unsafeBitCast(allocImp, to: AllocFunc.self)(cls, allocSel)
         
-        self.avatar = instance
+        // init
+        let initSel = NSSelectorFromString("init")
+        guard let initMethod = class_getInstanceMethod(type(of: instance), initSel) else { return }
+        let initImp = method_getImplementation(initMethod)
+        typealias InitFunc = @convention(c) (NSObject, Selector) -> NSObject?
+        guard let memoji = unsafeBitCast(initImp, to: InitFunc.self)(instance, initSel) else { return }
+        
+        // Randomize appearance
+        let randomSel = NSSelectorFromString("randomize")
+        if memoji.responds(to: randomSel) {
+            memoji.perform(randomSel)
+        }
+        
+        self.avatar = memoji
         self.currentType = .memoji
         
-        avtView?.perform(NSSelectorFromString("setAvatar:"), with: instance)
+        avtView?.perform(NSSelectorFromString("setAvatar:"), with: memoji)
         print("✅ Loaded random memoji")
-        
-        // Apply a body sticker for full-body view
-        applyBodySticker("person_waving")
     }
     
     func applyBodySticker(_ stickerName: String) {
         guard let avtView = avtView else { return }
         guard let stickerCfgCls = NSClassFromString("AVTStickerConfiguration") else { return }
         
-        // Try stickers pack first, then posesPack
         var cfg: NSObject?
         for pack in ["stickers", "posesPack"] {
             let sel = NSSelectorFromString("stickerConfigurationForMemojiInStickerPack:stickerName:")
@@ -142,7 +186,6 @@ final class AvatarKitBridge {
             return
         }
         
-        // transitionToStickerConfiguration:duration:completionHandler:
         let transSel = NSSelectorFromString("transitionToStickerConfiguration:duration:completionHandler:")
         guard avtView.responds(to: transSel) else { return }
         

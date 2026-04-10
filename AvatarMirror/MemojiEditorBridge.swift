@@ -1,19 +1,15 @@
 import UIKit
 
 /// Wraps the private AVTAvatarEditorViewController for creating/editing Memoji.
-/// When `isCreating = true`, the editor shows the full creation flow including
-/// the camera-based face scan option.
 @MainActor
 final class MemojiEditorBridge: NSObject {
     
     private var editorVC: UIViewController?
     private var store: NSObject?
+    private var environment: NSObject?
     private var completion: ((NSObject?) -> Void)?
     
     /// Present the system Memoji creator (with camera face scan).
-    /// - Parameters:
-    ///   - presenter: The view controller to present from
-    ///   - completion: Called with the created AVTAvatarRecord, or nil if cancelled
     func presentCreator(from presenter: UIViewController, completion: @escaping (NSObject?) -> Void) {
         self.completion = completion
         
@@ -23,28 +19,25 @@ final class MemojiEditorBridge: NSObject {
             return
         }
         
+        // Create AVTUIEnvironment
+        guard let env = createEnvironment() else {
+            print("❌ Failed to create AVTUIEnvironment")
+            completion(nil)
+            return
+        }
+        self.environment = env
+        
         // Create AVTAvatarStore
         guard let storeCls = NSClassFromString("AVTAvatarStore") else {
             print("❌ AVTAvatarStore not found")
             completion(nil)
             return
         }
-        
         let storeInstance = (storeCls as! NSObject.Type).init()
         self.store = storeInstance
         
-        // Create AVTAvatarEditorViewController with isCreating: true
-        guard let editorCls = NSClassFromString("AVTAvatarEditorViewController") else {
-            print("❌ AVTAvatarEditorViewController not found")
-            completion(nil)
-            return
-        }
-        
-        // initWithAvatarRecord:avtViewSessionProvider:store:enviroment:isCreating:
-        let sel = NSSelectorFromString("initWithAvatarRecord:avtViewSessionProvider:store:enviroment:isCreating:")
-        
-        // Use NSInvocation-style approach via performSelector workaround
-        guard let editor = createEditorVC(cls: editorCls, sel: sel, record: nil, store: storeInstance, isCreating: true) else {
+        // Create editor
+        guard let editor = createEditorVC(record: nil, store: storeInstance, environment: env, isCreating: true) else {
             print("❌ Failed to create editor")
             completion(nil)
             return
@@ -58,7 +51,7 @@ final class MemojiEditorBridge: NSObject {
             editor.perform(delegateSel, with: self)
         }
         
-        // Present in a navigation controller
+        // Present
         let nav = UINavigationController(rootViewController: editor)
         nav.modalPresentationStyle = .fullScreen
         presenter.present(nav, animated: true)
@@ -75,18 +68,20 @@ final class MemojiEditorBridge: NSObject {
             return
         }
         
-        guard let storeCls = NSClassFromString("AVTAvatarStore"),
-              let editorCls = NSClassFromString("AVTAvatarEditorViewController") else {
+        guard let env = createEnvironment() else {
             completion(nil)
             return
         }
+        self.environment = env
         
+        guard let storeCls = NSClassFromString("AVTAvatarStore") else {
+            completion(nil)
+            return
+        }
         let storeInstance = (storeCls as! NSObject.Type).init()
         self.store = storeInstance
         
-        let sel = NSSelectorFromString("initWithAvatarRecord:avtViewSessionProvider:store:enviroment:isCreating:")
-        
-        guard let editor = createEditorVC(cls: editorCls, sel: sel, record: record, store: storeInstance, isCreating: false) else {
+        guard let editor = createEditorVC(record: record, store: storeInstance, environment: env, isCreating: false) else {
             completion(nil)
             return
         }
@@ -103,24 +98,51 @@ final class MemojiEditorBridge: NSObject {
         presenter.present(nav, animated: true)
     }
     
-    // MARK: - Framework Loading
+    // MARK: - Environment
     
-    private func loadFrameworks() -> Bool {
-        let kit = dlopen("/System/Library/PrivateFrameworks/AvatarKit.framework/AvatarKit", RTLD_LAZY)
-        let ui = dlopen("/System/Library/PrivateFrameworks/AvatarUI.framework/AvatarUI", RTLD_LAZY)
-        return kit != nil && ui != nil
+    private func createEnvironment() -> NSObject? {
+        guard let envCls = NSClassFromString("AVTUIEnvironment") else {
+            print("❌ AVTUIEnvironment not found")
+            return nil
+        }
+        
+        // Try +defaultEnvironment class method
+        let defaultSel = NSSelectorFromString("defaultEnvironment")
+        guard let meta = object_getClass(envCls),
+              class_getClassMethod(meta, defaultSel) != nil else {
+            print("❌ +defaultEnvironment not found")
+            return nil
+        }
+        
+        let result = (envCls as AnyObject).perform(defaultSel)
+        guard let env = result?.takeUnretainedValue() as? NSObject else {
+            print("❌ +defaultEnvironment returned nil")
+            return nil
+        }
+        
+        print("✅ Created AVTUIEnvironment")
+        return env
     }
     
-    /// Create AVTAvatarEditorViewController using ObjC runtime IMP casting.
-    private func createEditorVC(cls: AnyClass, sel: Selector, record: NSObject?, store: NSObject, isCreating: Bool) -> UIViewController? {
+    // MARK: - Editor Creation
+    
+    private func createEditorVC(record: NSObject?, store: NSObject, environment: NSObject, isCreating: Bool) -> UIViewController? {
+        guard let editorCls = NSClassFromString("AVTAvatarEditorViewController") else {
+            print("❌ AVTAvatarEditorViewController not found")
+            return nil
+        }
+        
+        // initWithAvatarRecord:avtViewSessionProvider:store:enviroment:isCreating:
+        let sel = NSSelectorFromString("initWithAvatarRecord:avtViewSessionProvider:store:enviroment:isCreating:")
+        
         // Allocate using objc_msgSend
         let allocSel = NSSelectorFromString("alloc")
-        guard let allocMethod = class_getClassMethod(cls, allocSel) else { return nil }
+        guard let allocMethod = class_getClassMethod(editorCls, allocSel) else { return nil }
         let allocImp = method_getImplementation(allocMethod)
         
         typealias AllocFunc = @convention(c) (AnyClass, Selector) -> NSObject
         let allocFn = unsafeBitCast(allocImp, to: AllocFunc.self)
-        let instance = allocFn(cls, allocSel)
+        let instance = allocFn(editorCls, allocSel)
         
         guard instance.responds(to: sel) else {
             print("❌ Editor doesn't respond to init selector")
@@ -135,21 +157,25 @@ final class MemojiEditorBridge: NSObject {
             NSObject?,   // avatarRecord
             NSObject?,   // avtViewSessionProvider
             NSObject,    // store
-            NSObject?,   // environment
+            NSObject,    // environment (NOT nil!)
             Bool         // isCreating
         ) -> NSObject?
         
         let initFn = unsafeBitCast(imp, to: InitFunc.self)
-        return initFn(instance, sel, record, nil, store, nil, isCreating) as? UIViewController
+        return initFn(instance, sel, record, nil, store, environment, isCreating) as? UIViewController
+    }
+    
+    // MARK: - Framework Loading
+    
+    private func loadFrameworks() -> Bool {
+        let kit = dlopen("/System/Library/PrivateFrameworks/AvatarKit.framework/AvatarKit", RTLD_LAZY)
+        let ui = dlopen("/System/Library/PrivateFrameworks/AvatarUI.framework/AvatarUI", RTLD_LAZY)
+        return kit != nil && ui != nil
     }
 }
 
 // MARK: - AVTAvatarEditorViewControllerDelegate (informal protocol)
 extension MemojiEditorBridge {
-    
-    // The delegate methods are discovered via runtime; these are the common ones:
-    // - avatarEditorViewController:didSaveAvatarRecord:
-    // - avatarEditorViewControllerDidCancel:
     
     @objc func avatarEditorViewController(_ controller: UIViewController, didSaveAvatarRecord record: NSObject) {
         print("✅ Memoji saved: \(record)")
@@ -174,6 +200,7 @@ extension MemojiEditorBridge {
     private func cleanup() {
         editorVC = nil
         store = nil
+        environment = nil
         completion = nil
     }
 }
