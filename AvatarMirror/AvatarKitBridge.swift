@@ -2,11 +2,10 @@ import Foundation
 import ARKit
 
 /// Bridge between ARKit face tracking and Apple's private AvatarKit framework.
-/// Uses AVTRecordView which handles its own ARSession + face tracking internally.
 @MainActor
 final class AvatarKitBridge {
     
-    private(set) var recordView: NSObject? // AVTRecordView (subclass of SCNView)
+    private(set) var avtView: NSObject? // AVTRecordView (SCNView subclass)
     private var avatar: NSObject?
     private var frameworkLoaded = false
     
@@ -22,54 +21,84 @@ final class AvatarKitBridge {
         return frameworkLoaded
     }
     
-    /// Create an AVTRecordView — it's a SCNView subclass that handles face tracking internally.
+    /// Create an AVTRecordView (SCNView subclass with built-in recording support)
     func createView(frame: CGRect) -> UIView? {
         guard ensureFramework() else { return nil }
         
-        // Use AVTRecordView — it manages its own ARSession for face tracking
-        guard let recordViewClass = NSClassFromString("AVTRecordView") as? UIView.Type else {
-            print("❌ AVTRecordView not found, falling back to AVTView")
-            return createBasicView(frame: frame)
-        }
-        
-        let view = recordViewClass.init(frame: frame)
-        self.recordView = view as? NSObject
-        view.backgroundColor = .clear
-        
-        print("✅ Created AVTRecordView (SCNView subclass)")
-        return view
-    }
-    
-    private func createBasicView(frame: CGRect) -> UIView? {
-        guard let avtViewClass = NSClassFromString("AVTView") as? UIView.Type else {
-            print("❌ AVTView not found")
+        guard let viewClass = NSClassFromString("AVTRecordView") as? UIView.Type else {
+            print("❌ AVTRecordView not found")
             return nil
         }
-        let view = avtViewClass.init(frame: frame)
-        self.recordView = view as? NSObject
+        
+        let view = viewClass.init(frame: frame)
+        self.avtView = view as? NSObject
         view.backgroundColor = .clear
+        
+        // Enable continuous rendering
+        let renderSel = NSSelectorFromString("setRendersContinuously:")
+        if let obj = view as? NSObject, obj.responds(to: renderSel) {
+            let method = class_getInstanceMethod(type(of: obj), renderSel)!
+            let imp = method_getImplementation(method)
+            typealias Func = @convention(c) (NSObject, Selector, Bool) -> Void
+            unsafeBitCast(imp, to: Func.self)(obj, renderSel, true)
+        }
+        
+        print("✅ Created AVTRecordView")
         return view
     }
     
-    /// Start face tracking preview — AVTRecordView handles ARSession internally
-    func startPreviewing() {
-        guard let view = recordView else { return }
-        let sel = NSSelectorFromString("startPreviewing")
-        if view.responds(to: sel) {
-            view.perform(sel)
-            print("✅ startPreviewing called — AVTRecordView now tracking face")
-        } else {
-            print("⚠️ startPreviewing not available")
+    // MARK: - Face Tracking
+    
+    /// Start face tracking using AVTView's built-in transitionToCustomFaceTracking
+    func startFaceTracking() {
+        guard let view = avtView else { return }
+        
+        // Method 1: transitionToCustomFaceTrackingWithDuration:style:enableBakedAnimations:faceTrackingDidStartHandlerReceiverBlock:completionHandler:
+        let trackingSel = NSSelectorFromString("transitionToCustomFaceTrackingWithDuration:style:enableBakedAnimations:faceTrackingDidStartHandlerReceiverBlock:completionHandler:")
+        
+        if view.responds(to: trackingSel),
+           let method = class_getInstanceMethod(type(of: view), trackingSel) {
+            let imp = method_getImplementation(method)
+            
+            // duration: Double, style: Int, enableBakedAnimations: Bool, 
+            // faceTrackingDidStartHandlerReceiverBlock: block, completionHandler: block
+            typealias Func = @convention(c) (
+                NSObject, Selector,
+                Double,     // duration
+                Int,        // style
+                Bool,       // enableBakedAnimations
+                AnyObject?, // faceTrackingDidStartHandlerReceiverBlock
+                AnyObject?  // completionHandler
+            ) -> Void
+            
+            let fn = unsafeBitCast(imp, to: Func.self)
+            
+            let startBlock: @convention(block) (AnyObject?) -> Void = { handler in
+                print("✅ Face tracking did start!")
+            }
+            
+            let completionBlock: @convention(block) () -> Void = {
+                print("✅ Face tracking transition complete")
+            }
+            
+            fn(view, trackingSel, 0.3, 0, true, startBlock as AnyObject, completionBlock as AnyObject)
+            print("✅ transitionToCustomFaceTracking called")
+            return
+        }
+        
+        // Method 2: Fallback to startPreviewing
+        let previewSel = NSSelectorFromString("startPreviewing")
+        if view.responds(to: previewSel) {
+            view.perform(previewSel)
+            print("✅ startPreviewing called (fallback)")
         }
     }
     
-    /// Stop face tracking preview
-    func stopPreviewing() {
-        guard let view = recordView else { return }
+    func stopFaceTracking() {
+        guard let view = avtView else { return }
         let sel = NSSelectorFromString("stopPreviewing")
         if view.responds(to: sel) {
             view.perform(sel)
-            print("✅ stopPreviewing called")
         }
     }
     
@@ -82,11 +111,12 @@ final class AvatarKitBridge {
             return
         }
         
-        // Use +animojiNamed: class method (the correct way)
+        // Use +animojiNamed: class method
         let sel = NSSelectorFromString("animojiNamed:")
         guard let meta = object_getClass(cls),
               class_getClassMethod(meta, sel) != nil else {
-            print("❌ +animojiNamed: not found")
+            print("❌ +animojiNamed: not found, trying initWithName:error:")
+            loadAnimojiFallback(name)
             return
         }
         
@@ -97,16 +127,51 @@ final class AvatarKitBridge {
         }
         
         self.avatar = animoji
+        avtView?.setValue(animoji, forKeyPath: "avatar")
+        print("✅ Loaded animoji via animojiNamed: \(name)")
+    }
+    
+    private func loadAnimojiFallback(_ name: String) {
+        guard let cls = NSClassFromString("AVTAnimoji") else { return }
         
-        // Set avatar on the view via KVC (how SBSAnimoji does it)
-        recordView?.setValue(animoji, forKeyPath: "avatar")
-        print("✅ Loaded animoji: \(name)")
+        let allocSel = NSSelectorFromString("alloc")
+        guard let allocMethod = class_getClassMethod(cls, allocSel) else { return }
+        let allocImp = method_getImplementation(allocMethod)
+        typealias AllocFunc = @convention(c) (AnyClass, Selector) -> NSObject
+        let instance = unsafeBitCast(allocImp, to: AllocFunc.self)(cls, allocSel)
+        
+        let initSel = NSSelectorFromString("initWithName:error:")
+        guard instance.responds(to: initSel),
+              let method = class_getInstanceMethod(type(of: instance), initSel) else { return }
+        
+        let imp = method_getImplementation(method)
+        typealias InitFunc = @convention(c) (NSObject, Selector, NSString, UnsafeMutablePointer<NSObject?>?) -> NSObject?
+        
+        var error: NSObject?
+        guard let animoji = unsafeBitCast(imp, to: InitFunc.self)(instance, initSel, name as NSString, &error) else { return }
+        
+        self.avatar = animoji
+        avtView?.setValue(animoji, forKeyPath: "avatar")
+        print("✅ Loaded animoji via initWithName: \(name)")
     }
     
     func loadMemoji() {
         guard ensureFramework() else { return }
         guard let cls = NSClassFromString("AVTMemoji") else { return }
         
+        // Try +neutralMemoji first
+        let neutralSel = NSSelectorFromString("neutralMemoji")
+        if let meta = object_getClass(cls),
+           class_getClassMethod(meta, neutralSel) != nil,
+           let result = (cls as AnyObject).perform(neutralSel),
+           let memoji = result.takeUnretainedValue() as? NSObject {
+            self.avatar = memoji
+            avtView?.setValue(memoji, forKeyPath: "avatar")
+            print("✅ Loaded neutral memoji")
+            return
+        }
+        
+        // Fallback: alloc+init+randomize
         let allocSel = NSSelectorFromString("alloc")
         guard let allocMethod = class_getClassMethod(cls, allocSel) else { return }
         let allocImp = method_getImplementation(allocMethod)
@@ -120,54 +185,92 @@ final class AvatarKitBridge {
         guard let memoji = unsafeBitCast(initImp, to: InitFunc.self)(instance, initSel) else { return }
         
         let randomSel = NSSelectorFromString("randomize")
-        if memoji.responds(to: randomSel) {
-            memoji.perform(randomSel)
-        }
+        if memoji.responds(to: randomSel) { memoji.perform(randomSel) }
         
         self.avatar = memoji
-        recordView?.setValue(memoji, forKeyPath: "avatar")
+        avtView?.setValue(memoji, forKeyPath: "avatar")
         print("✅ Loaded random memoji")
     }
     
-    func applyBodySticker(_ stickerName: String) {
-        guard let view = recordView else { return }
-        guard let stickerCfgCls = NSClassFromString("AVTStickerConfiguration") else { return }
+    // MARK: - Manual face tracking (if built-in doesn't work)
+    
+    func applyFaceAnchor(_ anchor: ARFaceAnchor) {
+        guard let avatar = self.avatar else { return }
+        guard let trackInfoCls = NSClassFromString("AVTFaceTrackingInfo") else { return }
         
-        var cfg: NSObject?
-        for pack in ["stickers", "posesPack"] {
-            let sel = NSSelectorFromString("stickerConfigurationForMemojiInStickerPack:stickerName:")
-            if let result = (stickerCfgCls as? NSObject.Type)?.perform(sel, with: pack, with: stickerName) {
-                cfg = result.takeUnretainedValue() as? NSObject
-                if cfg != nil { break }
+        // Try trackingInfoWithFaceAnchor: first (if available)
+        let anchorSel = NSSelectorFromString("trackingInfoWithFaceAnchor:")
+        if let meta = object_getClass(trackInfoCls),
+           class_getClassMethod(meta, anchorSel) != nil {
+            let result = (trackInfoCls as AnyObject).perform(anchorSel, with: anchor)
+            if let info = result?.takeUnretainedValue() as? NSObject {
+                avatar.perform(NSSelectorFromString("applyBlendShapesWithTrackingInfo:"), with: info)
+                avatar.perform(NSSelectorFromString("applyHeadPoseWithTrackingInfo:"), with: info)
+                return
             }
         }
         
-        guard let stickerCfg = cfg else {
-            print("❌ Sticker \(stickerName) not found")
-            return
+        // Fallback: trackingInfoWithTrackingData: with raw buffer
+        applyViaRawTrackingData(anchor: anchor, avatar: avatar, trackInfoCls: trackInfoCls)
+    }
+    
+    private func applyViaRawTrackingData(anchor: ARFaceAnchor, avatar: NSObject, trackInfoCls: AnyClass) {
+        let sel = NSSelectorFromString("trackingInfoWithTrackingData:")
+        guard let method = class_getClassMethod(trackInfoCls, sel) else { return }
+        let imp = method_getImplementation(method)
+        
+        // Build raw tracking data buffer
+        // Layout based on runtime analysis: Double(8) + Bool as UInt8(1) + pad(3) + 51 floats + 51 floats + 2 floats = 428 bytes
+        var buffer = [UInt8](repeating: 0, count: 428)
+        
+        buffer.withUnsafeMutableBytes { raw in
+            let base = raw.baseAddress!
+            
+            var ts = CACurrentMediaTime()
+            memcpy(base, &ts, 8)
+            base.storeBytes(of: UInt8(1), toByteOffset: 8, as: UInt8.self)
+            
+            let order: [ARFaceAnchor.BlendShapeLocation] = [
+                .eyeBlinkLeft, .eyeBlinkRight, .eyeSquintLeft, .eyeSquintRight,
+                .eyeLookDownLeft, .eyeLookDownRight, .eyeLookInLeft, .eyeLookInRight,
+                .eyeWideLeft, .eyeWideRight, .eyeLookOutLeft, .eyeLookOutRight,
+                .eyeLookUpLeft, .eyeLookUpRight,
+                .browDownLeft, .browDownRight, .browInnerUp, .browOuterUpLeft, .browOuterUpRight,
+                .jawOpen, .mouthClose, .jawLeft, .jawRight, .jawForward,
+                .mouthUpperUpLeft, .mouthUpperUpRight, .mouthLowerDownLeft, .mouthLowerDownRight,
+                .mouthRollUpper, .mouthRollLower, .mouthSmileLeft, .mouthSmileRight,
+                .mouthDimpleLeft, .mouthDimpleRight, .mouthStretchLeft, .mouthStretchRight,
+                .mouthFrownLeft, .mouthFrownRight, .mouthPressLeft, .mouthPressRight,
+                .mouthPucker, .mouthFunnel, .mouthLeft, .mouthRight,
+                .mouthShrugLower, .mouthShrugUpper, .noseSneerLeft, .noseSneerRight,
+                .cheekPuff, .cheekSquintLeft, .cheekSquintRight,
+            ]
+            
+            for (i, loc) in order.enumerated() {
+                var val = anchor.blendShapes[loc]?.floatValue ?? 0
+                memcpy(base + 12 + i * 4, &val, 4)
+                memcpy(base + 216 + i * 4, &val, 4)
+            }
         }
         
-        let transSel = NSSelectorFromString("transitionToStickerConfiguration:duration:completionHandler:")
-        guard view.responds(to: transSel) else { return }
-        
-        let sig = view.method(for: transSel)
-        typealias TransFunc = @convention(c) (NSObject, Selector, NSObject, Double, AnyObject?) -> Void
-        let fn = unsafeBitCast(sig, to: TransFunc.self)
-        fn(view, transSel, stickerCfg, 0.3, nil)
-        
-        print("✅ Applied body sticker: \(stickerName)")
+        buffer.withUnsafeBytes { raw in
+            typealias Func = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
+            let fn = unsafeBitCast(imp, to: Func.self)
+            guard let info = fn(trackInfoCls, sel, raw.baseAddress!) else { return }
+            
+            avatar.perform(NSSelectorFromString("applyBlendShapesWithTrackingInfo:"), with: info)
+            avatar.perform(NSSelectorFromString("applyHeadPoseWithTrackingInfo:"), with: info)
+        }
     }
     
     // MARK: - Available Content
     
     static let availableAnimoji: [String] = {
-        // Try to get from AvatarKit at runtime
         dlopen("/System/Library/PrivateFrameworks/AvatarKit.framework/AvatarKit", RTLD_LAZY)
         if let cls = NSClassFromString("AVTAnimoji"),
            let names = (cls as AnyObject).value(forKeyPath: "animojiNames") as? [String] {
             return names
         }
-        // Fallback
         return [
             "alien", "bear", "boar", "cat", "chicken", "cow",
             "dog", "dragon", "fox", "ghost", "giraffe", "koala",

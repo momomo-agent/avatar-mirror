@@ -48,47 +48,26 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                if viewModel.isMemoji {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(AvatarKitBridge.memojiBodyPoses, id: \.self) { pose in
-                                Button {
-                                    viewModel.switchPose(pose)
-                                } label: {
-                                    Text(pose.replacingOccurrences(of: "_", with: " ").capitalized)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(viewModel.currentPose == pose ? .white.opacity(0.3) : .white.opacity(0.1))
-                                        .clipShape(Capsule())
-                                        .foregroundStyle(.white)
-                                }
+                // Animoji picker
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(AvatarKitBridge.availableAnimoji, id: \.self) { name in
+                            Button {
+                                viewModel.switchToAnimoji(name)
+                            } label: {
+                                Text(name.capitalized)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(viewModel.currentAnimoji == name && !viewModel.isMemoji ? .white.opacity(0.3) : .white.opacity(0.1))
+                                    .clipShape(Capsule())
+                                    .foregroundStyle(.white)
                             }
                         }
-                        .padding(.horizontal)
                     }
-                    .padding(.bottom, 8)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(AvatarKitBridge.availableAnimoji, id: \.self) { name in
-                                Button {
-                                    viewModel.switchToAnimoji(name)
-                                } label: {
-                                    Text(name.capitalized)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(viewModel.currentAnimoji == name ? .white.opacity(0.3) : .white.opacity(0.1))
-                                        .clipShape(Capsule())
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                    .padding(.bottom, 8)
+                    .padding(.horizontal)
                 }
+                .padding(.bottom, 8)
             }
         }
         .onAppear { viewModel.start() }

@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// UIViewRepresentable wrapper for AvatarKit's AVTRecordView (SCNView subclass)
 struct AvatarViewRepresentable: UIViewRepresentable {
     @ObservedObject var viewModel: AvatarMirrorViewModel
     
@@ -15,14 +14,12 @@ struct AvatarViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-/// Container that creates AVTRecordView once it has a real frame size.
 private class AVTContainerView: UIView {
     var viewModel: AvatarMirrorViewModel?
     private var avtViewAdded = false
     
     override func layoutSubviews() {
         super.layoutSubviews()
-        
         guard bounds.width > 0, bounds.height > 0 else { return }
         
         if !avtViewAdded {
@@ -33,9 +30,6 @@ private class AVTContainerView: UIView {
             addSubview(avtView)
             avtViewAdded = true
             
-            print("✅ AVTRecordView added with frame: \(bounds)")
-            
-            // Notify ViewModel that view is ready
             DispatchQueue.main.async {
                 viewModel.onViewReady()
             }
