@@ -19,6 +19,9 @@ final class AvatarKitBridge {
     private var frameCount = 0
     private var lastFrame: ARFrame?
     
+    /// Set to true to enable per-frame diagnostic logging
+    var verboseLogging = false
+    
     // MARK: - Setup
     
     private func ensureFramework() -> Bool {
@@ -104,7 +107,7 @@ final class AvatarKitBridge {
         
         self.lastFrame = frame
         frameCount += 1
-        let shouldLog = frameCount <= 10 || frameCount % 300 == 0
+        let shouldLog = verboseLogging && (frameCount <= 10 || frameCount % 300 == 0)
         
         let faceAnchors = frame.anchors.compactMap { $0 as? ARFaceAnchor }
         guard let faceAnchor = faceAnchors.first else { return }
