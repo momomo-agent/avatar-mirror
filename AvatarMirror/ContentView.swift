@@ -30,31 +30,6 @@ struct ContentView: View {
                             .clipShape(Capsule())
                             .foregroundStyle(.white)
                     }
-                    
-                    Button {
-                        viewModel.presentMemojiCreator()
-                    } label: {
-                        Image(systemName: "person.crop.circle.badge.plus")
-                            .font(.body)
-                            .padding(8)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
-                    }
-                    
-                    Button {
-                        if viewModel.isMemoji {
-                            viewModel.switchToAnimoji(viewModel.currentAnimoji)
-                        } else {
-                            viewModel.switchToMemoji()
-                        }
-                    } label: {
-                        Text(viewModel.isMemoji ? "🧑 Memoji" : "🐯 Animoji")
-                            .font(.caption.bold())
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
-                    }
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
