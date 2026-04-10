@@ -33,8 +33,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     private func startTracking() {
         let session = ARSession()
         let proxy = ARDelegateProxy { [weak self] frame in
-            guard let face = frame.anchors.first(where: { $0 is ARFaceAnchor }) as? ARFaceAnchor else { return }
-            let t = AvatarFaceTracking(faceAnchor: face)
+            let t = AvatarFaceTracking(arFrame: frame)
             DispatchQueue.main.async {
                 self?.tracking = t
             }
