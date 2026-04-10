@@ -115,8 +115,22 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             topVC = presented
         }
         
+        // Pause our ARSession to avoid VFXWorld conflicts with the editor's own session
+        arSession?.pause()
+        
         memojiEditor.presentCreator(from: topVC) { [weak self] record in
-            guard let self, let record else { return }
+            guard let self else {
+                return
+            }
+            
+            // Resume our ARSession
+            if let session = self.arSession {
+                let config = ARFaceTrackingConfiguration()
+                config.isWorldTrackingEnabled = false
+                session.run(config, options: [.resetTracking, .removeExistingAnchors])
+            }
+            
+            guard let record else { return }
             self.savedMemojiRecord = record
             self.isMemoji = true
             let avatarSel = NSSelectorFromString("avatar")
