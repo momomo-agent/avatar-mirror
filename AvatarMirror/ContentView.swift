@@ -1,5 +1,4 @@
 import SwiftUI
-import HumanSenseKit
 
 struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
@@ -14,7 +13,6 @@ struct ContentView: View {
             VStack {
                 // Top bar
                 HStack {
-                    // Tracking indicator
                     Circle()
                         .fill(viewModel.isTracking ? .green : .red)
                         .frame(width: 8, height: 8)
@@ -24,7 +22,6 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    // Create Memoji button
                     Button {
                         viewModel.presentMemojiCreator()
                     } label: {
@@ -35,7 +32,6 @@ struct ContentView: View {
                             .clipShape(Circle())
                     }
                     
-                    // Mode toggle
                     Button {
                         if viewModel.isMemoji {
                             viewModel.switchToAnimoji(viewModel.currentAnimoji)

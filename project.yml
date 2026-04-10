@@ -26,13 +26,7 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Development"
         Release:
           CODE_SIGN_IDENTITY: "Apple Distribution"
-    dependencies:
-      - package: HumanSenseKit
     entitlements:
       path: AvatarMirror/AvatarMirror.entitlements
       properties:
         com.apple.security.app-sandbox: true
-
-packages:
-  HumanSenseKit:
-    path: ../HumanSenseKit
