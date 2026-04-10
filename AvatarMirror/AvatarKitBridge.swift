@@ -148,22 +148,37 @@ final class AvatarKitBridge {
         guard let trackInfoCls = trackInfoCls,
               let meta = object_getClass(trackInfoCls) else { return nil }
         
-        // Use dataWithARFrame:captureOrientation:interfaceOrientation:
+        // Step 1: dataWithARFrame returns raw NSData (tracking data bytes)
+        let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
+        guard let method = class_getClassMethod(meta, dataSel) else { return nil }
+        let imp = method_getImplementation(method)
+        typealias DataFunc = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
+        let dataFn = unsafeBitCast(imp, to: DataFunc.self)
         // captureOrientation: 4 = landscapeRight (front camera sensor)
         // interfaceOrientation: 1 = portrait (UI)
-        // This returns an AVTFaceTrackingInfo directly (responds to trackingData)
-        let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
-        if let method = class_getClassMethod(meta, dataSel) {
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-            let fn = unsafeBitCast(imp, to: Func.self)
-            if let info = fn(trackInfoCls, dataSel, frame, 4, 1) {
-                if log { print("   📦 trackingInfo via dataWithARFrame") }
-                return info
-            }
+        guard let data = dataFn(trackInfoCls, dataSel, frame, 4, 1) else { return nil }
+        
+        // Step 2: Convert raw data → AVTFaceTrackingInfo via trackingInfoWithTrackingData:
+        let infoSel = NSSelectorFromString("trackingInfoWithTrackingData:")
+        guard let infoMethod = class_getClassMethod(meta, infoSel) else {
+            if log { print("   ⚠️ trackingInfoWithTrackingData: not found") }
+            return nil
         }
         
-        return nil
+        // data is NSData — pass raw bytes pointer
+        guard let nsData = data as? Data else {
+            if log { print("   ⚠️ dataWithARFrame didn't return NSData") }
+            return nil
+        }
+        
+        let infoImp = method_getImplementation(infoMethod)
+        return nsData.withUnsafeBytes { rawBuf -> NSObject? in
+            typealias InfoFunc = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
+            let infoFn = unsafeBitCast(infoImp, to: InfoFunc.self)
+            let info = infoFn(trackInfoCls, infoSel, rawBuf.baseAddress!)
+            if log { print("   📦 trackingInfo built from dataWithARFrame") }
+            return info
+        }
     }
     
     /// Manual fallback: build TrackingData struct and create AVTFaceTrackingInfo
