@@ -1,0 +1,47 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "avatarkit",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/momomo-agent/AvatarKit.git",
+          "name" : "AvatarKit"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "7bf0ad9d3c84a31add1753682a4bbc54a919b9a9",
+            "version" : "0.1.0"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "AvatarKit"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "humansensekit",
+          "kind" : "remoteSourceControl",
+          "location" : "https://github.com/momomo-agent/HumanSenseKit.git",
+          "name" : "HumanSenseKit"
+        },
+        "state" : {
+          "checkoutState" : {
+            "revision" : "fb34cdf36ae9f06e544ea16c8766fd960a0979f9",
+            "version" : "1.2.0"
+          },
+          "name" : "sourceControlCheckout"
+        },
+        "subpath" : "HumanSenseKit"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}
