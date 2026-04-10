@@ -5,7 +5,7 @@ import AVFoundation
 @MainActor
 final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var isTracking = false
-    @Published var currentAnimoji = "tiger"
+    @Published var currentAnimoji = "skull"
     @Published var isMemoji = false
     @Published var debugStatus = "Starting..."
     @Published var useHumanSenseKit = true
