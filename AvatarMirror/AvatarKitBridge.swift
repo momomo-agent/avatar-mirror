@@ -205,53 +205,36 @@ final class AvatarKitBridge {
             }
         }
         
-        // Method 1: _applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:
-        // This takes raw data, might work correctly
-        let rawPoseSel = NSSelectorFromString("_applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:")
-        if avatar.responds(to: rawPoseSel) {
-            // Build a minimal tracking data with just the pose
-            // For now, try the SceneKit node approach first
+        // From Ghidra: _applyHeadPoseWithTrackingData sets orientation on "head_JNT" 
+        // and position on "root_JNT", both found via childNodeWithName:recursively: on avatarNode.
+        // We replicate this directly using SCNNode APIs.
+        
+        let avatarNodeSel = NSSelectorFromString("avatarNode")
+        guard avatar.responds(to: avatarNodeSel),
+              let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? SCNNode else {
+            if log { print("   → headPose: avatar.avatarNode not available") }
+            return
         }
         
-        // Method 2: Set the SCNNode transform directly on the avatar's puppet node
-        if let view = avtView {
-            // Try getting the avatar's head node via the view hierarchy
-            let avatarNodeSel = NSSelectorFromString("avatarNode")
-            if view.responds(to: avatarNodeSel),
-               let node = view.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject {
-                let setSel = NSSelectorFromString("setSimdTransform:")
-                if node.responds(to: setSel),
-                   let method = class_getInstanceMethod(type(of: node), setSel) {
-                    let imp = method_getImplementation(method)
-                    typealias Func = @convention(c) (NSObject, Selector, simd_float4x4) -> Void
-                    let fn = unsafeBitCast(imp, to: Func.self)
-                    fn(node, setSel, anchor.transform)
-                    if log { print("   → headPose via avatarNode.simdTransform ✅") }
-                    return
-                }
-            }
-            
-            // Try puppetView.avatarNode
-            let puppetSel = NSSelectorFromString("puppetView")
-            if view.responds(to: puppetSel),
-               let puppet = view.perform(puppetSel)?.takeUnretainedValue() as? NSObject {
-                if puppet.responds(to: avatarNodeSel),
-                   let node = puppet.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject {
-                    let setSel = NSSelectorFromString("setSimdTransform:")
-                    if node.responds(to: setSel),
-                       let method = class_getInstanceMethod(type(of: node), setSel) {
-                        let imp = method_getImplementation(method)
-                        typealias Func = @convention(c) (NSObject, Selector, simd_float4x4) -> Void
-                        let fn = unsafeBitCast(imp, to: Func.self)
-                        fn(node, setSel, anchor.transform)
-                        if log { print("   → headPose via puppetView.avatarNode.simdTransform ✅") }
-                        return
-                    }
-                }
-            }
+        // Find head_JNT (orientation target) and root_JNT (position target)
+        guard let headJoint = avatarNode.childNode(withName: "head_JNT", recursively: true) else {
+            if log { print("   → headPose: head_JNT not found in avatarNode hierarchy") }
+            return
         }
         
-        if log { print("   → headPose: no suitable node found") }
+        // Extract rotation from anchor transform as quaternion
+        let q = simd_quatf(anchor.transform)
+        headJoint.simdOrientation = q
+        
+        // Extract translation and apply to root_JNT if available
+        let translation = simd_float3(anchor.transform.columns.3.x,
+                                       anchor.transform.columns.3.y,
+                                       anchor.transform.columns.3.z)
+        if let rootJoint = avatarNode.childNode(withName: "root_JNT", recursively: true) {
+            rootJoint.simdPosition = translation
+        }
+        
+        if log { print("   → headPose via head_JNT/root_JNT ✅") }
     }
     
     /// Manual fallback: build TrackingData struct and create AVTFaceTrackingInfo
