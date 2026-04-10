@@ -1,5 +1,4 @@
 import SwiftUI
-import HumanSenseKit
 
 struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
@@ -13,17 +12,9 @@ struct ContentView: View {
             
             VStack {
                 HStack {
-                    Circle()
-                        .fill(viewModel.isTracking ? .green : .red)
-                        .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(viewModel.isTracking ? "Tracking" : "No Face")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.6))
-                        Text(viewModel.debugStatus)
-                            .font(.system(size: 8))
-                            .foregroundStyle(.white.opacity(0.4))
-                    }
+                    Text(viewModel.debugStatus)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
                     
                     Spacer()
                     

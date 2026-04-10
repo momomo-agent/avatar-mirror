@@ -1,10 +1,9 @@
 import SwiftUI
 import ARKit
 import AVFoundation
-import HumanSenseKit
 
 @MainActor
-final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate {
+final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var isTracking = false
     @Published var currentAnimoji = "tiger"
     @Published var isMemoji = false
@@ -14,9 +13,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
     let bridge = AvatarKitBridge()
     let memojiEditor = MemojiEditorBridge()
     
-    // Direct ARSession as primary — HumanSenseKit as optional enrichment
-    private var arSession: ARSession?
-    private var kit: HumanSenseKit?
     private var savedMemojiRecord: NSObject?
     
     func start() {
@@ -31,8 +27,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
             Task { @MainActor in
                 guard let self else { return }
                 if granted {
-                    self.debugStatus = "Camera OK, starting AR..."
-                    self.startDirectARSession()
+                    self.debugStatus = "Camera OK"
+                    // AVTRecordView.startPreviewing will be called after view is created
                 } else {
                     self.debugStatus = "❌ Camera denied"
                 }
@@ -40,74 +36,27 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
         }
     }
     
-    private func startDirectARSession() {
-        // Use our own ARSession directly — don't rely on HumanSenseKit's internal session
-        let session = ARSession()
-        session.delegate = self
-        self.arSession = session
+    /// Called by the view representable once AVTRecordView is created and laid out
+    func onViewReady() {
+        bridge.loadAnimoji(currentAnimoji)
         
-        let config = ARFaceTrackingConfiguration()
-        config.maximumNumberOfTrackedFaces = 1
-        session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        // Start face tracking — AVTRecordView handles ARSession internally
+        bridge.startPreviewing()
+        debugStatus = "Previewing..."
         
-        debugStatus = "ARSession running (direct)"
-        print("✅ Direct ARSession started with ARFaceTrackingConfiguration")
+        // Monitor tracking state via KVO on the record view
+        if let view = bridge.recordView {
+            let previewingSel = NSSelectorFromString("isPreviewing")
+            if view.responds(to: previewingSel) {
+                let isPreviewing = (view.perform(previewingSel)?.toOpaque() != nil)
+                debugStatus = isPreviewing ? "✅ Previewing" : "⚠️ Preview not started"
+                print("📊 isPreviewing: \(isPreviewing)")
+            }
+        }
     }
     
     func stop() {
-        arSession?.pause()
-        arSession = nil
-    }
-    
-    // MARK: - ARSessionDelegate (direct)
-    
-    nonisolated func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-        guard let faceAnchor = anchors.compactMap({ $0 as? ARFaceAnchor }).first else { return }
-        Task { @MainActor in
-            let wasTracking = isTracking
-            isTracking = faceAnchor.isTracked
-            
-            if isTracking != wasTracking {
-                debugStatus = isTracking ? "✅ Face detected!" : "Face lost"
-                print("🔄 Tracking: \(wasTracking) → \(isTracking)")
-            }
-            
-            bridge.applyFaceAnchor(faceAnchor)
-        }
-    }
-    
-    nonisolated func session(_ session: ARSession, didFailWithError error: Error) {
-        print("❌ ARSession error: \(error)")
-        Task { @MainActor in
-            debugStatus = "❌ AR error: \(error.localizedDescription)"
-        }
-    }
-    
-    nonisolated func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-        let state: String
-        switch camera.trackingState {
-        case .notAvailable: state = "Not available"
-        case .limited(let reason):
-            switch reason {
-            case .initializing: state = "Initializing..."
-            case .excessiveMotion: state = "Too much motion"
-            case .insufficientFeatures: state = "Insufficient features"
-            case .relocalizing: state = "Relocalizing"
-            @unknown default: state = "Limited (unknown)"
-            }
-        case .normal: state = "Normal"
-        }
-        print("📷 Camera tracking state: \(state)")
-        Task { @MainActor in
-            debugStatus = "Camera: \(state)"
-        }
-    }
-    
-    nonisolated func sessionWasInterrupted(_ session: ARSession) {
-        print("⚠️ ARSession interrupted")
-        Task { @MainActor in
-            debugStatus = "⚠️ AR interrupted"
-        }
+        bridge.stopPreviewing()
     }
     
     // MARK: - Switching
@@ -151,10 +100,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject, ARSessionDelegate
         let avatarSel = NSSelectorFromString("avatar")
         if record.responds(to: avatarSel),
            let avatar = record.perform(avatarSel)?.takeUnretainedValue() as? NSObject {
-            if let avtView = bridge.avtView {
-                avtView.perform(NSSelectorFromString("setAvatar:"), with: avatar)
-                print("✅ Loaded saved memoji")
-            }
+            bridge.recordView?.setValue(avatar, forKeyPath: "avatar")
+            print("✅ Loaded saved memoji")
         }
     }
 }
