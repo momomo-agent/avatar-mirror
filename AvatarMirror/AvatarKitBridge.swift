@@ -17,6 +17,7 @@ final class AvatarKitBridge {
     
     private var trackInfoCls: AnyClass?
     private var frameCount = 0
+    private var lastFrame: ARFrame?
     
     // MARK: - Setup
     
@@ -101,6 +102,7 @@ final class AvatarKitBridge {
     func applyARFrame(_ frame: ARFrame) {
         guard let avatar = avatar, let trackInfoCls = trackInfoCls else { return }
         
+        self.lastFrame = frame
         frameCount += 1
         let shouldLog = frameCount <= 10 || frameCount % 300 == 0
         
@@ -180,83 +182,113 @@ final class AvatarKitBridge {
         }
     }
     
-    /// Apply head pose directly from ARFaceAnchor.transform
-    /// We skip applyHeadPoseWithTrackingInfo because it flips 180° in external mode
+    /// Apply head pose using AvatarKit's own applyHeadPoseWithTrackingInfo method
+    /// or fall back to direct node manipulation
     private func applyHeadPose(from anchor: ARFaceAnchor, log: Bool) {
         guard let avatar = avatar else { return }
         
-        // First: check if avatar has a world (required for head pose)
-        let worldSel = NSSelectorFromString("world")
+        // Check avatarNode.world — required by applyHeadPoseWithTrackingInfo
+        let avatarNodeSel = NSSelectorFromString("avatarNode")
         if log {
-            if avatar.responds(to: worldSel) {
-                let world = avatar.perform(worldSel)?.takeUnretainedValue()
-                print("   🔍 avatar.world = \(String(describing: world))")
-            }
-            // Check headNode
-            let headSel = NSSelectorFromString("headNode")
-            if avatar.responds(to: headSel) {
-                let head = avatar.perform(headSel)?.takeUnretainedValue()
-                print("   🔍 avatar.headNode = \(String(describing: head))")
-            }
-            let avatarNodeSel = NSSelectorFromString("avatarNode")
-            if avatar.responds(to: avatarNodeSel) {
-                let node = avatar.perform(avatarNodeSel)?.takeUnretainedValue()
-                print("   🔍 avatar.avatarNode = \(String(describing: node))")
+            if avatar.responds(to: avatarNodeSel),
+               let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject {
+                let worldSel = NSSelectorFromString("world")
+                if avatarNode.responds(to: worldSel) {
+                    let world = avatarNode.perform(worldSel)?.takeUnretainedValue()
+                    print("   🔍 avatarNode.world = \(String(describing: world))")
+                }
             }
         }
         
-        // From Ghidra: _applyHeadPoseWithTrackingData sets orientation on "head_JNT" 
-        // and position on "root_JNT", both found via childNodeWithName:recursively: on avatarNode.
-        // VFXNode is NOT SCNNode — must use ObjC runtime for all node operations.
+        // Strategy: Use AvatarKit's own trackingInfo-based head pose method.
+        // Build trackingInfo from ARFrame data, then call applyHeadPoseWithTrackingInfo:
+        guard let trackInfoCls = trackInfoCls else {
+            if log { print("   → headPose: no trackInfoCls") }
+            return
+        }
         
+        // Use dataWithARFrame:captureOrientation:interfaceOrientation: to build proper tracking data
+        // This is what AvatarKit uses internally
+        let dataFromFrameSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
+        guard let meta = object_getClass(trackInfoCls),
+              let method = class_getClassMethod(meta, dataFromFrameSel) else {
+            if log { print("   → headPose: dataWithARFrame: not found, trying manual") }
+            applyHeadPoseManual(from: anchor, to: avatar, log: log)
+            return
+        }
+        
+        // We need the ARFrame, not just the anchor
+        // The ARFrame is stored in lastFrame by the ARSession delegate
+        guard let frame = lastFrame else {
+            if log { print("   → headPose: no lastFrame available") }
+            return
+        }
+        
+        let imp = method_getImplementation(method)
+        // captureOrientation: 1 = portrait, interfaceOrientation: 1 = portrait
+        typealias DataFunc = @convention(c) (AnyClass, Selector, ARFrame, Int, Int) -> NSObject?
+        let dataFn = unsafeBitCast(imp, to: DataFunc.self)
+        guard let data = dataFn(trackInfoCls, dataFromFrameSel, frame, 1, 1) else {
+            if log { print("   → headPose: dataWithARFrame returned nil") }
+            return
+        }
+        
+        // Now create trackingInfo from data
+        let infoSel = NSSelectorFromString("trackingInfoWithTrackingData:")
+        guard let infoMethod = class_getClassMethod(meta, infoSel) else {
+            if log { print("   → headPose: trackingInfoWithTrackingData: not found") }
+            return
+        }
+        let infoImp = method_getImplementation(infoMethod)
+        typealias InfoFunc = @convention(c) (AnyClass, Selector, NSObject) -> NSObject?
+        let infoFn = unsafeBitCast(infoImp, to: InfoFunc.self)
+        guard let info = infoFn(trackInfoCls, infoSel, data) else {
+            if log { print("   → headPose: trackingInfoWithTrackingData returned nil") }
+            return
+        }
+        
+        // Call applyHeadPoseWithTrackingInfo:gazeCorrection:pointOfView:
+        let poseSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:gazeCorrection:pointOfView:")
+        if avatar.responds(to: poseSel),
+           let poseMethod = class_getInstanceMethod(type(of: avatar), poseSel) {
+            let poseImp = method_getImplementation(poseMethod)
+            typealias PoseFunc = @convention(c) (NSObject, Selector, NSObject, Bool, NSObject?) -> Void
+            let poseFn = unsafeBitCast(poseImp, to: PoseFunc.self)
+            poseFn(avatar, poseSel, info, false, nil)
+            if log { print("   → headPose via applyHeadPoseWithTrackingInfo ✅") }
+        } else {
+            if log { print("   → headPose: applyHeadPoseWithTrackingInfo not available") }
+        }
+    }
+    
+    /// Fallback: direct node manipulation
+    private func applyHeadPoseManual(from anchor: ARFaceAnchor, to avatar: NSObject, log: Bool) {
         let avatarNodeSel = NSSelectorFromString("avatarNode")
         guard avatar.responds(to: avatarNodeSel),
               let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject else {
-            if log { print("   → headPose: avatar.avatarNode not available") }
+            if log { print("   → headPose manual: avatar.avatarNode not available") }
             return
         }
         
-        // Find head_JNT via childNodeWithName:recursively: (VFXNode method, inherited from SCNNode-like API)
         let findSel = NSSelectorFromString("childNodeWithName:recursively:")
-        guard avatarNode.responds(to: findSel) else {
-            if log { print("   → headPose: avatarNode doesn't respond to childNodeWithName:recursively:") }
-            return
-        }
+        guard avatarNode.responds(to: findSel) else { return }
         
         let headJointName = "head_JNT" as NSString
         guard let headJoint = avatarNode.perform(findSel, with: headJointName, with: NSNumber(value: true))?.takeUnretainedValue() as? NSObject else {
-            if log { print("   → headPose: head_JNT not found in avatarNode hierarchy") }
+            if log { print("   → headPose manual: head_JNT not found") }
             return
         }
         
-        // Set orientation on head_JNT
         let setOrientationSel = NSSelectorFromString("setSimdOrientation:")
         if headJoint.responds(to: setOrientationSel),
            let method = class_getInstanceMethod(type(of: headJoint), setOrientationSel) {
             let imp = method_getImplementation(method)
             typealias Func = @convention(c) (NSObject, Selector, simd_quatf) -> Void
             let fn = unsafeBitCast(imp, to: Func.self)
-            let q = simd_quatf(anchor.transform)
-            fn(headJoint, setOrientationSel, q)
+            fn(headJoint, setOrientationSel, simd_quatf(anchor.transform))
         }
         
-        // Set position on root_JNT
-        let rootJointName = "root_JNT" as NSString
-        if let rootJoint = avatarNode.perform(findSel, with: rootJointName, with: NSNumber(value: true))?.takeUnretainedValue() as? NSObject {
-            let setPositionSel = NSSelectorFromString("setSimdPosition:")
-            if rootJoint.responds(to: setPositionSel),
-               let method = class_getInstanceMethod(type(of: rootJoint), setPositionSel) {
-                let imp = method_getImplementation(method)
-                typealias Func = @convention(c) (NSObject, Selector, simd_float3) -> Void
-                let fn = unsafeBitCast(imp, to: Func.self)
-                let t = simd_float3(anchor.transform.columns.3.x,
-                                     anchor.transform.columns.3.y,
-                                     anchor.transform.columns.3.z)
-                fn(rootJoint, setPositionSel, t)
-            }
-        }
-        
-        if log { print("   → headPose via head_JNT/root_JNT ✅") }
+        if log { print("   → headPose manual via head_JNT ✅") }
     }
     
     /// Manual fallback: build TrackingData struct and create AVTFaceTrackingInfo
