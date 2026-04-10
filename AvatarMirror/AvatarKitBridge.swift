@@ -45,6 +45,15 @@ final class AvatarKitBridge {
         
         setBool(on: view as NSObject, selector: "setRendersContinuously:", value: true)
         
+        // Diagnose: check if world was created
+        let worldSel = NSSelectorFromString("world")
+        if let nsView = view as? NSObject, nsView.responds(to: worldSel) {
+            let world = nsView.perform(worldSel)?.takeUnretainedValue()
+            print("🔍 AVTRecordView.world = \(String(describing: world))")
+        } else {
+            print("🔍 AVTRecordView does not respond to 'world'")
+        }
+        
         print("✅ Created AVTRecordView")
         return view
     }
@@ -175,6 +184,26 @@ final class AvatarKitBridge {
     /// We skip applyHeadPoseWithTrackingInfo because it flips 180° in external mode
     private func applyHeadPose(from anchor: ARFaceAnchor, log: Bool) {
         guard let avatar = avatar else { return }
+        
+        // First: check if avatar has a world (required for head pose)
+        let worldSel = NSSelectorFromString("world")
+        if log {
+            if avatar.responds(to: worldSel) {
+                let world = avatar.perform(worldSel)?.takeUnretainedValue()
+                print("   🔍 avatar.world = \(String(describing: world))")
+            }
+            // Check headNode
+            let headSel = NSSelectorFromString("headNode")
+            if avatar.responds(to: headSel) {
+                let head = avatar.perform(headSel)?.takeUnretainedValue()
+                print("   🔍 avatar.headNode = \(String(describing: head))")
+            }
+            let avatarNodeSel = NSSelectorFromString("avatarNode")
+            if avatar.responds(to: avatarNodeSel) {
+                let node = avatar.perform(avatarNodeSel)?.takeUnretainedValue()
+                print("   🔍 avatar.avatarNode = \(String(describing: node))")
+            }
+        }
         
         // Method 1: _applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:
         // This takes raw data, might work correctly
