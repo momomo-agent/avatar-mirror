@@ -207,31 +207,53 @@ final class AvatarKitBridge {
         
         // From Ghidra: _applyHeadPoseWithTrackingData sets orientation on "head_JNT" 
         // and position on "root_JNT", both found via childNodeWithName:recursively: on avatarNode.
-        // We replicate this directly using SCNNode APIs.
+        // VFXNode is NOT SCNNode — must use ObjC runtime for all node operations.
         
         let avatarNodeSel = NSSelectorFromString("avatarNode")
         guard avatar.responds(to: avatarNodeSel),
-              let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? SCNNode else {
+              let avatarNode = avatar.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject else {
             if log { print("   → headPose: avatar.avatarNode not available") }
             return
         }
         
-        // Find head_JNT (orientation target) and root_JNT (position target)
-        guard let headJoint = avatarNode.childNode(withName: "head_JNT", recursively: true) else {
+        // Find head_JNT via childNodeWithName:recursively: (VFXNode method, inherited from SCNNode-like API)
+        let findSel = NSSelectorFromString("childNodeWithName:recursively:")
+        guard avatarNode.responds(to: findSel) else {
+            if log { print("   → headPose: avatarNode doesn't respond to childNodeWithName:recursively:") }
+            return
+        }
+        
+        let headJointName = "head_JNT" as NSString
+        guard let headJoint = avatarNode.perform(findSel, with: headJointName, with: NSNumber(value: true))?.takeUnretainedValue() as? NSObject else {
             if log { print("   → headPose: head_JNT not found in avatarNode hierarchy") }
             return
         }
         
-        // Extract rotation from anchor transform as quaternion
-        let q = simd_quatf(anchor.transform)
-        headJoint.simdOrientation = q
+        // Set orientation on head_JNT
+        let setOrientationSel = NSSelectorFromString("setSimdOrientation:")
+        if headJoint.responds(to: setOrientationSel),
+           let method = class_getInstanceMethod(type(of: headJoint), setOrientationSel) {
+            let imp = method_getImplementation(method)
+            typealias Func = @convention(c) (NSObject, Selector, simd_quatf) -> Void
+            let fn = unsafeBitCast(imp, to: Func.self)
+            let q = simd_quatf(anchor.transform)
+            fn(headJoint, setOrientationSel, q)
+        }
         
-        // Extract translation and apply to root_JNT if available
-        let translation = simd_float3(anchor.transform.columns.3.x,
-                                       anchor.transform.columns.3.y,
-                                       anchor.transform.columns.3.z)
-        if let rootJoint = avatarNode.childNode(withName: "root_JNT", recursively: true) {
-            rootJoint.simdPosition = translation
+        // Set position on root_JNT
+        let rootJointName = "root_JNT" as NSString
+        if let rootJoint = avatarNode.perform(findSel, with: rootJointName, with: NSNumber(value: true))?.takeUnretainedValue() as? NSObject {
+            let setPositionSel = NSSelectorFromString("setSimdPosition:")
+            if rootJoint.responds(to: setPositionSel),
+               let method = class_getInstanceMethod(type(of: rootJoint), setPositionSel) {
+                let imp = method_getImplementation(method)
+                typealias Func = @convention(c) (NSObject, Selector, simd_float3) -> Void
+                let fn = unsafeBitCast(imp, to: Func.self)
+                let t = simd_float3(anchor.transform.columns.3.x,
+                                     anchor.transform.columns.3.y,
+                                     anchor.transform.columns.3.z)
+                fn(rootJoint, setPositionSel, t)
+            }
         }
         
         if log { print("   → headPose via head_JNT/root_JNT ✅") }
