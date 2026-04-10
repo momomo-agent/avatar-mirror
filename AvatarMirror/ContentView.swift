@@ -7,6 +7,7 @@ struct ContentView: View {
     @StateObject private var audioAnimator = AudioDrivenAnimator()
     @State private var mode: AvatarMode = .faceTracking
     @State private var showFilePicker = false
+    @State private var showSamples = false
     
     enum AvatarMode {
         case faceTracking
@@ -14,19 +15,10 @@ struct ContentView: View {
         case microphone
     }
     
-    /// Active tracking source based on mode.
     private var activeTracking: AvatarFaceTracking {
         switch mode {
         case .faceTracking: return viewModel.tracking
         case .audioFile, .microphone: return audioAnimator.tracking
-        }
-    }
-    
-    /// Active transition — smooth for audio, none for face tracking.
-    private var activeTransition: AvatarTransition {
-        switch mode {
-        case .faceTracking: return .none
-        case .audioFile, .microphone: return .none // audio animator handles its own interpolation
         }
     }
     
@@ -36,13 +28,12 @@ struct ContentView: View {
             
             AvatarView(
                 animoji: viewModel.currentAnimoji,
-                tracking: activeTracking,
-                transition: activeTransition
+                tracking: activeTracking
             )
             .ignoresSafeArea()
             
             VStack {
-                // Status bar
+                // Status
                 HStack {
                     Text(statusText)
                         .font(.caption2)
@@ -54,19 +45,54 @@ struct ContentView: View {
                 
                 Spacer()
                 
+                // Sample audio picker (shown when in audio mode)
+                if showSamples {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(AudioSample.all) { sample in
+                                Button {
+                                    playSample(sample)
+                                } label: {
+                                    VStack(spacing: 2) {
+                                        Text(sample.name)
+                                            .font(.caption)
+                                        Text(sample.voice)
+                                            .font(.caption2)
+                                            .foregroundStyle(.white.opacity(0.5))
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(.white.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .foregroundStyle(.white)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                    .padding(.bottom, 4)
+                }
+                
                 // Mode switcher
                 HStack(spacing: 12) {
-                    modeButton("Face", icon: "face.smiling", mode: .faceTracking)
-                    modeButton("Mic", icon: "mic.fill", mode: .microphone)
+                    modeButton("Face", icon: "face.smiling", active: mode == .faceTracking) {
+                        mode = .faceTracking
+                    }
+                    modeButton("Mic", icon: "mic.fill", active: mode == .microphone) {
+                        mode = .microphone
+                    }
+                    modeButton("Samples", icon: "music.note.list", active: showSamples) {
+                        showSamples.toggle()
+                    }
                     
                     Button {
                         showFilePicker = true
                     } label: {
-                        Label("Audio", systemImage: "doc.fill")
+                        Label("File", systemImage: "doc.fill")
                             .font(.caption)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(mode == .audioFile ? .blue.opacity(0.5) : .white.opacity(0.1))
+                            .background(.white.opacity(0.1))
                             .clipShape(Capsule())
                             .foregroundStyle(.white)
                     }
@@ -124,24 +150,31 @@ struct ContentView: View {
         }
     }
     
-    private func modeButton(_ title: String, icon: String, mode: AvatarMode) -> some View {
-        Button {
-            self.mode = mode
-        } label: {
+    private func modeButton(_ title: String, icon: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(self.mode == mode ? .blue.opacity(0.5) : .white.opacity(0.1))
+                .background(active ? .blue.opacity(0.5) : .white.opacity(0.1))
                 .clipShape(Capsule())
                 .foregroundStyle(.white)
         }
     }
     
-    private func switchMode(to newMode: AvatarMode) {
-        // Stop previous
+    private func playSample(_ sample: AudioSample) {
+        guard let url = sample.url else {
+            audioAnimator.status = "❌ Sample not found: \(sample.filename)"
+            return
+        }
+        mode = .audioFile
+        viewModel.stop()
         audioAnimator.stop()
-        
+        audioAnimator.startWithAudioFile(url)
+    }
+    
+    private func switchMode(to newMode: AvatarMode) {
+        audioAnimator.stop()
         switch newMode {
         case .faceTracking:
             viewModel.start()
@@ -150,8 +183,6 @@ struct ContentView: View {
             audioAnimator.startWithMicrophone()
         case .audioFile:
             viewModel.stop()
-            // File picker handles start
-            break
         }
     }
 }
