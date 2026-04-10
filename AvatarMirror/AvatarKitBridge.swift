@@ -148,32 +148,18 @@ final class AvatarKitBridge {
         guard let trackInfoCls = trackInfoCls,
               let meta = object_getClass(trackInfoCls) else { return nil }
         
-        // Try trackingInfoWithARFrame:inputOrientation:outputOrientation: first (simpler)
-        let directSel = NSSelectorFromString("trackingInfoWithARFrame:inputOrientation:outputOrientation:")
-        if let method = class_getClassMethod(meta, directSel) {
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-            let fn = unsafeBitCast(imp, to: Func.self)
-            // inputOrientation: 4 = landscapeRight (front camera sensor), outputOrientation: 1 = portrait (UI)
-            if let info = fn(trackInfoCls, directSel, frame, 4, 1) {
-                if log { print("   📦 trackingInfo via trackingInfoWithARFrame:inputOrientation:outputOrientation:") }
-                return info
-            }
-        }
-        
-        // Fallback: dataWithARFrame → trackingInfoWithTrackingData
+        // Use dataWithARFrame:captureOrientation:interfaceOrientation:
+        // captureOrientation: 4 = landscapeRight (front camera sensor)
+        // interfaceOrientation: 1 = portrait (UI)
+        // This returns an AVTFaceTrackingInfo directly (responds to trackingData)
         let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
         if let method = class_getClassMethod(meta, dataSel) {
             let imp = method_getImplementation(method)
             typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
             let fn = unsafeBitCast(imp, to: Func.self)
-            if let data = fn(trackInfoCls, dataSel, frame, 4, 1) {
-                // data might already be a trackingInfo (responds to trackingData)
-                let tdSel = NSSelectorFromString("trackingData")
-                if data.responds(to: tdSel) {
-                    if log { print("   📦 trackingInfo via dataWithARFrame (direct)") }
-                    return data
-                }
+            if let info = fn(trackInfoCls, dataSel, frame, 4, 1) {
+                if log { print("   📦 trackingInfo via dataWithARFrame") }
+                return info
             }
         }
         
