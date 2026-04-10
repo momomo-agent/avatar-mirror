@@ -101,119 +101,128 @@ final class AvatarKitBridge {
         let interfaceOrientationRaw = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.interfaceOrientation.rawValue ?? 1
-        
-        // captureOrientation for front camera in portrait = .landscapeRight (4)
-        let captureOrientationRaw = 4
+        let captureOrientationRaw = 4 // front camera sensor = landscapeRight
         
         if shouldLog {
             let bs = faceAnchor.blendShapes
-            print("🎯 Frame #\(frameCount): jawOpen=\(bs[.jawOpen]?.floatValue ?? -1) captureOri=\(captureOrientationRaw) interfaceOri=\(interfaceOrientationRaw)")
+            print("🎯 Frame #\(frameCount): jawOpen=\(bs[.jawOpen]?.floatValue ?? -1)")
         }
         
-        // Step 1: Get tracking DATA from ARFrame
-        let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
-        if let meta = object_getClass(trackInfoCls),
-           let method = class_getClassMethod(meta, dataSel) {
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-            let fn = unsafeBitCast(imp, to: Func.self)
-            
-            if let data = fn(trackInfoCls, dataSel, frame, captureOrientationRaw, interfaceOrientationRaw) {
-                if shouldLog {
-                    print("   ✅ dataWithARFrame returned: \(type(of: data)) length=\((data as? Data)?.count ?? -1)")
-                    // Check if it's NSData
-                    if let nsData = data as? Data {
-                        print("   Data size: \(nsData.count) bytes")
-                    }
-                }
+        // Strategy: use trackingInfo for BLENDSHAPES only, apply head pose separately
+        var blendShapesApplied = false
+        
+        // Try dataWithARFrame → trackingInfoWithTrackingData → applyBlendShapes
+        if let meta = object_getClass(trackInfoCls) {
+            let dataSel = NSSelectorFromString("dataWithARFrame:captureOrientation:interfaceOrientation:")
+            if let method = class_getClassMethod(meta, dataSel) {
+                let imp = method_getImplementation(method)
+                typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
+                let fn = unsafeBitCast(imp, to: Func.self)
                 
-                // Step 2: Create AVTFaceTrackingInfo from the data
-                let infoSel = NSSelectorFromString("trackingInfoWithTrackingData:")
-                if let infoMethod = class_getClassMethod(meta, infoSel) {
-                    let infoImp = method_getImplementation(infoMethod)
-                    
-                    // trackingInfoWithTrackingData: expects the raw struct, not NSData
-                    // We need to get the bytes from the NSData and pass them
-                    if let nsData = data as? Data {
+                if let data = fn(trackInfoCls, dataSel, frame, captureOrientationRaw, interfaceOrientationRaw) {
+                    // data is NSData — convert to trackingInfo
+                    let infoSel = NSSelectorFromString("trackingInfoWithTrackingData:")
+                    if let nsData = data as? Data,
+                       let infoMethod = class_getClassMethod(meta, infoSel) {
+                        let infoImp = method_getImplementation(infoMethod)
                         nsData.withUnsafeBytes { rawBuf in
                             typealias InfoFunc = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
                             let infoFn = unsafeBitCast(infoImp, to: InfoFunc.self)
                             if let info = infoFn(trackInfoCls, infoSel, rawBuf.baseAddress!) {
-                                if shouldLog { print("   ✅ trackingInfoWithTrackingData created: \(type(of: info))") }
-                                applyTrackingInfo(info, to: avatar, log: shouldLog)
-                                return
+                                let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
+                                if avatar.responds(to: bsSel) {
+                                    avatar.perform(bsSel, with: info)
+                                    blendShapesApplied = true
+                                    if shouldLog { print("   ✅ blendshapes via trackingInfo") }
+                                }
+                            }
+                        }
+                    }
+                    // Maybe data responds to trackingData (is already a trackingInfo)
+                    if !blendShapesApplied {
+                        let tdSel = NSSelectorFromString("trackingData")
+                        if data.responds(to: tdSel) {
+                            let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
+                            if avatar.responds(to: bsSel) {
+                                avatar.perform(bsSel, with: data)
+                                blendShapesApplied = true
+                                if shouldLog { print("   ✅ blendshapes via trackingInfo (direct)") }
                             }
                         }
                     }
                 }
-                
-                // If data is not NSData, maybe it IS the tracking info already?
-                // Check if it responds to trackingData
-                let tdSel = NSSelectorFromString("trackingData")
-                if data.responds(to: tdSel) {
-                    if shouldLog { print("   ✅ dataWithARFrame returned a trackingInfo object directly") }
-                    applyTrackingInfo(data, to: avatar, log: shouldLog)
-                    return
-                }
-            } else {
-                if shouldLog { print("   ❌ dataWithARFrame returned nil") }
             }
         }
         
-        // Approach 2: trackingInfoWithARFrame: (might also return data, handle both)
-        let infoFrameSel = NSSelectorFromString("trackingInfoWithARFrame:captureOrientation:interfaceOrientation:")
-        if let meta = object_getClass(trackInfoCls),
-           let method = class_getClassMethod(meta, infoFrameSel) {
-            let imp = method_getImplementation(method)
-            typealias Func = @convention(c) (AnyClass, Selector, AnyObject, Int, Int) -> NSObject?
-            let fn = unsafeBitCast(imp, to: Func.self)
-            
-            if let result = fn(trackInfoCls, infoFrameSel, frame, captureOrientationRaw, interfaceOrientationRaw) {
-                if shouldLog { print("   trackingInfoWithARFrame returned: \(type(of: result))") }
-                
-                // If it's NSData, extract bytes and create tracking info
-                if let nsData = result as? Data {
-                    nsData.withUnsafeBytes { rawBuf in
-                        let createSel = NSSelectorFromString("trackingInfoWithTrackingData:")
-                        if let createMethod = class_getClassMethod(meta, createSel) {
-                            let createImp = method_getImplementation(createMethod)
-                            typealias CreateFunc = @convention(c) (AnyClass, Selector, UnsafeRawPointer) -> NSObject?
-                            let createFn = unsafeBitCast(createImp, to: CreateFunc.self)
-                            if let info = createFn(trackInfoCls, createSel, rawBuf.baseAddress!) {
-                                if shouldLog { print("   ✅ Created trackingInfo from data bytes") }
-                                applyTrackingInfo(info, to: avatar, log: shouldLog)
-                            }
-                        }
-                    }
-                    return
-                }
-                
-                // If it's already a tracking info object
-                let tdSel = NSSelectorFromString("trackingData")
-                if result.responds(to: tdSel) {
-                    applyTrackingInfo(result, to: avatar, log: shouldLog)
-                    return
-                }
-            }
+        if !blendShapesApplied {
+            if shouldLog { print("   ⚠️ blendshapes fallback not implemented yet") }
         }
         
-        // Approach 3: Build TrackingData struct manually from ARFaceAnchor
-        applyFaceAnchorManually(faceAnchor, to: avatar, log: shouldLog)
+        // HEAD POSE: always apply directly from ARFaceAnchor
+        // applyHeadPoseWithTrackingInfo flips 180° in external mode, so we do it ourselves
+        applyHeadPose(from: faceAnchor, log: shouldLog)
     }
     
     private func applyTrackingInfo(_ info: NSObject, to avatar: NSObject, log: Bool) {
         let bsSel = NSSelectorFromString("applyBlendShapesWithTrackingInfo:")
-        let poseSel = NSSelectorFromString("applyHeadPoseWithTrackingInfo:")
-        
         if avatar.responds(to: bsSel) {
             avatar.perform(bsSel, with: info)
             if log { print("   → applyBlendShapes ✅") }
         }
+    }
+    
+    /// Apply head pose directly from ARFaceAnchor.transform
+    /// We skip applyHeadPoseWithTrackingInfo because it flips 180° in external mode
+    private func applyHeadPose(from anchor: ARFaceAnchor, log: Bool) {
+        guard let avatar = avatar else { return }
         
-        if avatar.responds(to: poseSel) {
-            avatar.perform(poseSel, with: info)
-            if log { print("   → applyHeadPose ✅") }
+        // Method 1: _applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:
+        // This takes raw data, might work correctly
+        let rawPoseSel = NSSelectorFromString("_applyHeadPoseWithTrackingData:gazeCorrection:pointOfView:")
+        if avatar.responds(to: rawPoseSel) {
+            // Build a minimal tracking data with just the pose
+            // For now, try the SceneKit node approach first
         }
+        
+        // Method 2: Set the SCNNode transform directly on the avatar's puppet node
+        if let view = avtView {
+            // Try getting the avatar's head node via the view hierarchy
+            let avatarNodeSel = NSSelectorFromString("avatarNode")
+            if view.responds(to: avatarNodeSel),
+               let node = view.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject {
+                let setSel = NSSelectorFromString("setSimdTransform:")
+                if node.responds(to: setSel),
+                   let method = class_getInstanceMethod(type(of: node), setSel) {
+                    let imp = method_getImplementation(method)
+                    typealias Func = @convention(c) (NSObject, Selector, simd_float4x4) -> Void
+                    let fn = unsafeBitCast(imp, to: Func.self)
+                    fn(node, setSel, anchor.transform)
+                    if log { print("   → headPose via avatarNode.simdTransform ✅") }
+                    return
+                }
+            }
+            
+            // Try puppetView.avatarNode
+            let puppetSel = NSSelectorFromString("puppetView")
+            if view.responds(to: puppetSel),
+               let puppet = view.perform(puppetSel)?.takeUnretainedValue() as? NSObject {
+                if puppet.responds(to: avatarNodeSel),
+                   let node = puppet.perform(avatarNodeSel)?.takeUnretainedValue() as? NSObject {
+                    let setSel = NSSelectorFromString("setSimdTransform:")
+                    if node.responds(to: setSel),
+                       let method = class_getInstanceMethod(type(of: node), setSel) {
+                        let imp = method_getImplementation(method)
+                        typealias Func = @convention(c) (NSObject, Selector, simd_float4x4) -> Void
+                        let fn = unsafeBitCast(imp, to: Func.self)
+                        fn(node, setSel, anchor.transform)
+                        if log { print("   → headPose via puppetView.avatarNode.simdTransform ✅") }
+                        return
+                    }
+                }
+            }
+        }
+        
+        if log { print("   → headPose: no suitable node found") }
     }
     
     /// Manual fallback: build TrackingData struct and create AVTFaceTrackingInfo
