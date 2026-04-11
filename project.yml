@@ -13,9 +13,8 @@ targets:
     sources:
       - path: AvatarMirror
         excludes:
-          - "Resources/**"
-      - path: AvatarMirror/Resources
-        type: folder
+          - "Resources/AudioSamples/**"
+      - path: AvatarMirror/Resources/AudioSamples
         buildPhase: resources
     settings:
       base:
