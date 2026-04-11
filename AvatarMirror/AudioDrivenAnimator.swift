@@ -11,6 +11,9 @@ final class AudioDrivenAnimator: ObservableObject {
     /// Head rotation driven by audio energy
     @Published var headRotation: simd_quatf = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
     
+    /// Direct callback for 60fps tracking updates (bypasses SwiftUI).
+    var onTrackingUpdate: ((AvatarFaceTracking) -> Void)?
+    
     private var audioEngine: AVAudioEngine?
     private var audioPlayer: AVAudioPlayerNode?
     private var displayLink: CADisplayLink?
@@ -252,6 +255,9 @@ final class AudioDrivenAnimator: ObservableObject {
         tracking.blendshapes = bs
         tracking.headRotation = headRotation
         tracking.isTracking = true
+        
+        // Fire direct callback for 60fps rendering (bypasses SwiftUI)
+        onTrackingUpdate?(tracking)
     }
     
     // MARK: - Audio Analysis

@@ -30,6 +30,9 @@ struct ContentView: View {
                 animoji: viewModel.currentAnimoji,
                 tracking: activeTracking
             )
+            .trackingSource { callback in
+                audioAnimator.onTrackingUpdate = callback
+            }
             .ignoresSafeArea()
             
             VStack {
