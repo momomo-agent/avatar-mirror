@@ -5,11 +5,30 @@ import os
 struct AvatarMirrorApp: App {
     init() {
         dumpTrackingInfo()
+        startDebugScreenshotTimer()
     }
     
     var body: some Scene {
         WindowGroup {
             ContentView()
+        }
+    }
+    
+    /// Saves a screenshot to Documents/debug_screenshot.png every 2 seconds
+    private func startDebugScreenshotTimer() {
+        Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            DispatchQueue.main.async {
+                guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                      let window = scene.windows.first else { return }
+                let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+                let image = renderer.image { ctx in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+                }
+                guard let data = image.pngData() else { return }
+                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let path = docs.appendingPathComponent("debug_screenshot.png")
+                try? data.write(to: path)
+            }
         }
     }
     

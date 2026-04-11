@@ -1,6 +1,7 @@
 import SwiftUI
 import AvatarKit
 import UniformTypeIdentifiers
+import simd
 
 struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
@@ -8,6 +9,8 @@ struct ContentView: View {
     @State private var mode: AvatarMode = .faceTracking
     @State private var showFilePicker = false
     @State private var showSamples = false
+    @State private var showDebug = false
+    @StateObject private var debugSettings = DebugSettings()
     
     enum AvatarMode {
         case faceTracking
@@ -16,10 +19,16 @@ struct ContentView: View {
     }
     
     private var activeTracking: AvatarFaceTracking {
+        var t: AvatarFaceTracking
         switch mode {
-        case .faceTracking: return viewModel.tracking
-        case .audioFile, .microphone: return audioAnimator.tracking
+        case .faceTracking: t = viewModel.tracking
+        case .audioFile, .microphone: t = audioAnimator.tracking
         }
+        t.cameraSpace = debugSettings.cameraSpace
+        if debugSettings.forceCenter {
+            t.headRotation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+        }
+        return t
     }
     
     var body: some View {
@@ -31,7 +40,16 @@ struct ContentView: View {
                 tracking: activeTracking
             )
             .trackingSource { callback in
-                audioAnimator.onTrackingUpdate = callback
+                audioAnimator.onTrackingUpdate = { [weak debugSettings] tracking in
+                    var t = tracking
+                    if let s = debugSettings {
+                        t.cameraSpace = s.cameraSpace
+                        if s.forceCenter {
+                            t.headRotation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+                        }
+                    }
+                    callback(t)
+                }
             }
             .ignoresSafeArea()
             
@@ -99,8 +117,30 @@ struct ContentView: View {
                             .clipShape(Capsule())
                             .foregroundStyle(.white)
                     }
+                    
+                    Button {
+                        showDebug.toggle()
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.caption)
+                            .padding(8)
+                            .background(showDebug ? .orange.opacity(0.5) : .white.opacity(0.1))
+                            .clipShape(Circle())
+                            .foregroundStyle(.white)
+                    }
                 }
                 .padding(.bottom, 4)
+                
+                // Debug toggles
+                if showDebug {
+                    HStack(spacing: 16) {
+                        debugToggle("Camera Space", isOn: $debugSettings.cameraSpace)
+                        debugToggle("World Space", isOn: $debugSettings.worldSpace)
+                        debugToggle("Center", isOn: $debugSettings.forceCenter)
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+                }
                 
                 // Animoji picker
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -180,12 +220,35 @@ struct ContentView: View {
         audioAnimator.stop()
         switch newMode {
         case .faceTracking:
+            debugSettings.cameraSpace = true
             viewModel.start()
         case .microphone:
+            debugSettings.cameraSpace = false
             viewModel.stop()
             audioAnimator.startWithMicrophone()
         case .audioFile:
+            debugSettings.cameraSpace = false
             viewModel.stop()
         }
     }
+    
+    private func debugToggle(_ label: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
+                    .font(.caption2)
+                Text(label)
+                    .font(.caption2)
+            }
+            .foregroundStyle(isOn.wrappedValue ? .orange : .white.opacity(0.5))
+        }
+    }
+}
+
+class DebugSettings: ObservableObject {
+    @Published var cameraSpace = true
+    @Published var worldSpace = false
+    @Published var forceCenter = false
 }
