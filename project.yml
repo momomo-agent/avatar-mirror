@@ -26,11 +26,16 @@ targets:
         DEVELOPMENT_TEAM: P2GN9QW8E5
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       configs:
         Debug:
           CODE_SIGN_IDENTITY: "Apple Development"
+          CODE_SIGN_STYLE: Automatic
+          ENABLE_CODE_SIGNING: YES
         Release:
           CODE_SIGN_IDENTITY: "Apple Distribution"
+          CODE_SIGN_STYLE: Automatic
+          ENABLE_CODE_SIGNING: YES
     dependencies:
       - package: HumanSenseKit
       - package: AvatarKit
@@ -40,5 +45,4 @@ packages:
     url: https://github.com/momomo-agent/HumanSenseKit.git
     from: "1.2.0"
   AvatarKit:
-    url: https://github.com/momomo-agent/AvatarKit.git
-    from: "0.6.4"
+    path: ../AvatarKit
