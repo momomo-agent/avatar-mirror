@@ -45,4 +45,5 @@ packages:
     url: https://github.com/momomo-agent/HumanSenseKit.git
     from: "1.2.0"
   AvatarKit:
-    path: ../AvatarKit
+    url: https://github.com/momomo-agent/AvatarKit.git
+    branch: main
