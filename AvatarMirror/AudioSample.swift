@@ -10,7 +10,7 @@ struct AudioSample: Identifiable {
     
     var url: URL? {
         // Resources is a folder reference in the bundle
-        Bundle.main.url(forResource: filename, withExtension: "mp3", subdirectory: "Resources/AudioSamples")
+        Bundle.main.url(forResource: filename, withExtension: "mp3")
     }
     
     static let all: [AudioSample] = [
