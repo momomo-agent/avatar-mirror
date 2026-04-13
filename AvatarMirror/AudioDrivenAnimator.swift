@@ -15,6 +15,8 @@ final class AudioDrivenAnimator: ObservableObject {
     var onTrackingUpdate: ((AvatarFaceTracking) -> Void)?
     
     private var audioEngine: AVAudioEngine?
+    private var currentFileURL: URL?
+    private var currentFileIsSecurityScoped = false
     private var audioPlayer: AVAudioPlayerNode?
     private var displayLink: CADisplayLink?
     
@@ -69,16 +71,18 @@ final class AudioDrivenAnimator: ObservableObject {
     func startWithAudioFile(_ url: URL) {
         stop()
         
-        guard url.startAccessingSecurityScopedResource() else {
-            status = "Cannot access file"
-            return
-        }
+        // startAccessingSecurityScopedResource is needed for file-picker URLs
+        // but returns false for bundle resources — that's fine, just proceed
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
         
         guard let audioFile = try? AVAudioFile(forReading: url) else {
             status = "Cannot read audio file"
-            url.stopAccessingSecurityScopedResource()
+            if isSecurityScoped { url.stopAccessingSecurityScopedResource() }
             return
         }
+        
+        self.currentFileURL = url
+        self.currentFileIsSecurityScoped = isSecurityScoped
         
         let engine = AVAudioEngine()
         let player = AVAudioPlayerNode()
@@ -110,7 +114,7 @@ final class AudioDrivenAnimator: ObservableObject {
             startDisplayLink()
         } catch {
             status = "Playback error: \(error.localizedDescription)"
-            url.stopAccessingSecurityScopedResource()
+            if isSecurityScoped { url.stopAccessingSecurityScopedResource() }
         }
     }
     
@@ -123,6 +127,11 @@ final class AudioDrivenAnimator: ObservableObject {
         audioEngine?.mainMixerNode.removeTap(onBus: 0)
         audioEngine = nil
         audioPlayer = nil
+        if currentFileIsSecurityScoped {
+            currentFileURL?.stopAccessingSecurityScopedResource()
+        }
+        currentFileURL = nil
+        currentFileIsSecurityScoped = false
         isActive = false
         currentLevel = 0
         smoothedLevel = 0

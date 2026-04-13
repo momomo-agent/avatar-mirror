@@ -31,8 +31,7 @@ struct ContentView: View {
 
     private var activeTracking: AvatarFaceTracking {
         switch mode {
-        case .faceTracking:
-            return debugSettings.worldSpace ? viewModel.worldTracking : viewModel.tracking
+        case .faceTracking: return viewModel.tracking
         case .audioFile, .microphone: return audioAnimator.tracking
         }
     }
@@ -147,9 +146,6 @@ struct ContentView: View {
             applyTracking(activeTracking)
         }
         .onChange(of: debugSettings.cameraSpace) { _, _ in
-            applyTracking(activeTracking)
-        }
-        .onChange(of: debugSettings.worldSpace) { _, _ in
             applyTracking(activeTracking)
         }
         .onChange(of: debugSettings.forceCenter) { _, _ in
