@@ -70,13 +70,55 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         debugStatus = "Tracking"
     }
     
+    /// Blendshape EMA smoothing (Apple smooths before packing into the buffer)
+    private let smoothingFactor: Float = 0.3  // lower = smoother, 0.3 ≈ Apple's feel
+    private var smoothedBlendshapes: [String: Float] = [:]
+    
+    private func smoothTracking(_ tracking: AvatarFaceTracking) -> AvatarFaceTracking {
+        var smoothed: [String: Float] = [:]
+        for (key, value) in tracking.blendshapes {
+            let prev = smoothedBlendshapes[key] ?? value
+            let s = prev + smoothingFactor * (value - prev)
+            smoothed[key] = s
+            smoothedBlendshapes[key] = s
+        }
+        // Decay keys that disappeared
+        for key in smoothedBlendshapes.keys where tracking.blendshapes[key] == nil {
+            let decayed = smoothedBlendshapes[key]! * (1.0 - smoothingFactor)
+            if decayed < 0.001 {
+                smoothedBlendshapes.removeValue(forKey: key)
+            } else {
+                smoothedBlendshapes[key] = decayed
+                smoothed[key] = decayed
+            }
+        }
+        return AvatarFaceTracking(
+            blendshapes: smoothed,
+            rawQuaternion: tracking.rawQuaternion,
+            headTranslation: tracking.headTranslation,
+            coordinateSpace: tracking.coordinateSpace
+        )
+    }
+    
     private func handleTrackingUpdate(world: AvatarFaceTracking, camera: AvatarFaceTracking) {
         if world.isTracking {
             stopDecay()
             lastTrackedWorld = world
             lastTrackedCamera = camera
-            trackingWorld = world
-            trackingCamera = camera
+            // Smooth blendshapes (shared — same ARKit source values)
+            let smoothedWorld = smoothTracking(world)
+            trackingWorld = AvatarFaceTracking(
+                blendshapes: smoothedWorld.blendshapes,
+                rawQuaternion: world.rawQuaternion,
+                headTranslation: world.headTranslation,
+                coordinateSpace: world.coordinateSpace
+            )
+            trackingCamera = AvatarFaceTracking(
+                blendshapes: smoothedWorld.blendshapes,
+                rawQuaternion: camera.rawQuaternion,
+                headTranslation: camera.headTranslation,
+                coordinateSpace: camera.coordinateSpace
+            )
             debugStatus = "Tracking"
         } else {
             if faceLostTime == nil, lastTrackedWorld != nil {

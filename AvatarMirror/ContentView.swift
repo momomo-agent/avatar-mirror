@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var trackingMode: TrackingMode = .camera
     @State private var showFilePicker = false
     @State private var showSamples = false
+    @State private var hasLoggedDebug = false
 
     private let bridge = AvatarBridge()
 
@@ -26,6 +27,20 @@ struct ContentView: View {
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
         bridge.applyTracking(tracking)
+        
+        // Debug: log camera worldTransform and quaternion once
+        if !hasLoggedDebug, let wt = bridge.getCameraWorldTransform() {
+            hasLoggedDebug = true
+            let q = tracking.rawQuaternion ?? tracking.headRotation.quaternion
+            print("=== DEBUG: cameraNode.worldTransform ===")
+            print("  col0: \(wt.columns.0)")
+            print("  col1: \(wt.columns.1)")
+            print("  col2: \(wt.columns.2)")
+            print("  col3: \(wt.columns.3)")
+            print("  quaternion: ix=\(q.imag.x) iy=\(q.imag.y) iz=\(q.imag.z) r=\(q.real)")
+            print("  coordinateSpace: \(tracking.coordinateSpace)")
+            print("  translation: \(tracking.headTranslation)")
+        }
     }
 
     private var activeTracking: AvatarFaceTracking {
@@ -95,6 +110,7 @@ struct ContentView: View {
                         ForEach(TrackingMode.allCases, id: \.self) { tm in
                             Button {
                                 trackingMode = tm
+                                hasLoggedDebug = false
                                 applyTracking(activeTracking)
                             } label: {
                                 Text(tm.rawValue)
