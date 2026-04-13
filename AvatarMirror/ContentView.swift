@@ -28,15 +28,19 @@ struct ContentView: View {
     private func applyTracking(_ tracking: AvatarFaceTracking) {
         var t = tracking
         t.coordinateSpace = .world
+        
+        // Use applyTrackingDirect for blendshapes + rotation (bypasses _applyHeadPose)
+        bridge.applyTrackingDirect(t)
+        
+        // Manually set neck position for translation modes
         switch trackingMode {
         case .centered:
-            t.headTranslation = .zero
+            break // no translation
         case .depth:
-            t.headTranslation = SIMD3(0, 0, t.headTranslation.z)
+            bridge.setNeckPosition(SIMD3(0, 0, t.headTranslation.z))
         case .full:
-            break // keep full translation
+            bridge.setNeckPosition(t.headTranslation)
         }
-        bridge.applyTracking(t)
     }
 
     private var activeTracking: AvatarFaceTracking {
