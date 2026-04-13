@@ -7,7 +7,7 @@ struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
     @StateObject private var audioAnimator = AudioDrivenAnimator()
     @State private var mode: AvatarMode = .faceTracking
-    @State private var trackingMode: TrackingMode = .centered
+    @State private var trackingMode: TrackingMode = .camera
     @State private var showFilePicker = false
     @State private var showSamples = false
 
@@ -20,31 +20,21 @@ struct ContentView: View {
     }
 
     enum TrackingMode: String, CaseIterable {
-        case centered = "居中"
-        case depth = "前后"
-        case full = "自由"
+        case world = "World"
+        case camera = "Camera"
     }
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
-        var t = tracking
-        // Always cameraSpace=1 — let _applyHeadPose do W_scene × R for rotation.
-        // Only vary translation based on tracking mode.
-        switch trackingMode {
-        case .centered:
-            t.headTranslation = .zero
-            t.coordinateSpace = .cameraRotationOnly
-        case .depth:
-            t.headTranslation = SIMD3(0, 0, t.headTranslation.z)
-            t.coordinateSpace = .cameraFull
-        case .full:
-            t.coordinateSpace = .cameraFull
-        }
-        bridge.applyTracking(t)
+        bridge.applyTracking(tracking)
     }
 
     private var activeTracking: AvatarFaceTracking {
         switch mode {
-        case .faceTracking: return viewModel.tracking
+        case .faceTracking:
+            switch trackingMode {
+            case .world: return viewModel.trackingWorld
+            case .camera: return viewModel.trackingCamera
+            }
         case .audioFile, .microphone: return audioAnimator.tracking
         }
     }
@@ -157,7 +147,10 @@ struct ContentView: View {
                 .padding(.bottom, 16)
             }
         }
-        .onChange(of: activeTracking.timestamp) { _, _ in
+        .onChange(of: viewModel.trackingWorld.timestamp) { _, _ in
+            applyTracking(activeTracking)
+        }
+        .onChange(of: audioAnimator.tracking.timestamp) { _, _ in
             applyTracking(activeTracking)
         }
         .onAppear {

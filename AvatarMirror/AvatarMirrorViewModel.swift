@@ -5,15 +5,17 @@ import AvatarKit
 
 @MainActor
 final class AvatarMirrorViewModel: NSObject, ObservableObject {
-    @Published var tracking = AvatarFaceTracking()
+    @Published var trackingWorld = AvatarFaceTracking()
+    @Published var trackingCamera = AvatarFaceTracking()
     @Published var currentAnimoji = "skull"
     @Published var debugStatus = "Starting..."
     
     private var arSession: ARSession?
     private var arDelegate: ARDelegateProxy?
     
-    /// Last tracked pose — held when face is lost for smooth decay
-    private var lastTrackedPose: AvatarFaceTracking?
+    /// Last tracked poses — held when face is lost for smooth decay
+    private var lastTrackedWorld: AvatarFaceTracking?
+    private var lastTrackedCamera: AvatarFaceTracking?
     private var faceLostTime: CFTimeInterval?
     private var decayLink: CADisplayLink?
     
@@ -43,18 +45,19 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         let proxy = ARDelegateProxy { [weak self] frame in
             guard let faceAnchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first else {
                 let empty = AvatarFaceTracking()
-                DispatchQueue.main.async { self?.handleTrackingUpdate(empty) }
+                DispatchQueue.main.async { self?.handleTrackingUpdate(world: empty, camera: empty) }
                 return
             }
-            // Camera-relative: inv(camera) × face, matching Apple's pipeline.
-            // _applyHeadPose with cameraSpace=1 does W_scene × R to transform
-            // into scene space. This handles both rotation and translation.
-            let tracking = AvatarFaceTracking(
+            // Produce both coordinate spaces for A/B comparison.
+            // World: Euler delta from faceAnchor.transform, cameraSpace=0
+            let world = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
+            // Camera: inv(camera) × face, cameraSpace=1
+            let camera = AvatarFaceTracking(
                 faceAnchor: faceAnchor,
                 cameraTransform: frame.camera.transform,
                 withTranslation: true
             )
-            DispatchQueue.main.async { self?.handleTrackingUpdate(tracking) }
+            DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera) }
         }
         session.delegate = proxy
         self.arSession = session
@@ -67,14 +70,16 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         debugStatus = "Tracking"
     }
     
-    private func handleTrackingUpdate(_ newTracking: AvatarFaceTracking) {
-        if newTracking.isTracking {
+    private func handleTrackingUpdate(world: AvatarFaceTracking, camera: AvatarFaceTracking) {
+        if world.isTracking {
             stopDecay()
-            lastTrackedPose = newTracking
-            tracking = newTracking
+            lastTrackedWorld = world
+            lastTrackedCamera = camera
+            trackingWorld = world
+            trackingCamera = camera
             debugStatus = "Tracking"
         } else {
-            if faceLostTime == nil, lastTrackedPose != nil {
+            if faceLostTime == nil, lastTrackedWorld != nil {
                 faceLostTime = CACurrentMediaTime()
                 startDecay()
                 debugStatus = "Face lost"
@@ -96,7 +101,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     }
     
     @objc private func decayTick() {
-        guard let lastPose = lastTrackedPose, let lostTime = faceLostTime else {
+        guard let lastWorld = lastTrackedWorld, let lastCamera = lastTrackedCamera,
+              let lostTime = faceLostTime else {
             stopDecay()
             return
         }
@@ -106,12 +112,19 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         let t = 1.0 - (1.0 - progress) * (1.0 - progress) * (1.0 - progress)
         
         if progress >= 1.0 {
-            tracking = AvatarFaceTracking()
+            trackingWorld = AvatarFaceTracking()
+            trackingCamera = AvatarFaceTracking()
             stopDecay()
-            lastTrackedPose = nil
+            lastTrackedWorld = nil
+            lastTrackedCamera = nil
             return
         }
         
+        trackingWorld = decayTracking(lastWorld, t: t)
+        trackingCamera = decayTracking(lastCamera, t: t)
+    }
+    
+    private func decayTracking(_ lastPose: AvatarFaceTracking, t: Float) -> AvatarFaceTracking {
         var blendshapes: [String: Float] = [:]
         for (key, value) in lastPose.blendshapes {
             let decayed = value * (1.0 - t)
@@ -124,7 +137,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         
         let decayedTranslation = lastPose.headTranslation * (1.0 - t)
         
-        tracking = AvatarFaceTracking(
+        return AvatarFaceTracking(
             blendshapes: blendshapes,
             rawQuaternion: decayedQ,
             headTranslation: decayedTranslation,
