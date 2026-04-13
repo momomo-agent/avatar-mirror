@@ -17,16 +17,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     private var faceLostTime: CFTimeInterval?
     private var decayLink: CADisplayLink?
     
-    /// Initial camera-relative translation — captured on first tracked frame.
-    /// Subsequent frames subtract this to get delta translation.
-    private var initialTranslation: SIMD3<Float>?
-    
     /// Duration to smoothly decay from last pose to neutral when face is lost
     private let decayDuration: TimeInterval = 0.5
-    
-    /// Translation amplification factor.
-    /// Camera-relative deltas are tiny (~0.01-0.05m), need scaling for visible movement.
-    private let translationScale: Float = 3.0
     
     func start() {
         guard ARFaceTrackingConfiguration.isSupported else {
@@ -47,8 +39,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     }
     
     private func startTracking() {
-        initialTranslation = nil
-        
         let session = ARSession()
         let proxy = ARDelegateProxy { [weak self] frame in
             guard let faceAnchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first else {
@@ -56,14 +46,9 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 DispatchQueue.main.async { self?.handleTrackingUpdate(empty) }
                 return
             }
-            // World-space Euler delta for rotation
-            // Camera-relative for translation delta
-            let world = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
-            let cam = AvatarFaceTracking(faceAnchor: faceAnchor, cameraTransform: frame.camera.transform)
-            
-            var t = world
-            t.headTranslation = cam.headTranslation
-            DispatchQueue.main.async { self?.handleTrackingUpdate(t) }
+            // Camera-relative: rotation + translation, let _applyHeadPose handle scene transform
+            let tracking = AvatarFaceTracking(faceAnchor: faceAnchor, cameraTransform: frame.camera.transform, withTranslation: true)
+            DispatchQueue.main.async { self?.handleTrackingUpdate(tracking) }
         }
         session.delegate = proxy
         self.arSession = session
@@ -79,19 +64,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     private func handleTrackingUpdate(_ newTracking: AvatarFaceTracking) {
         if newTracking.isTracking {
             stopDecay()
-            
-            // Capture initial translation on first tracked frame
-            if initialTranslation == nil {
-                initialTranslation = newTracking.headTranslation
-            }
-            
-            // Compute delta from initial position and scale up
-            var t = newTracking
-            let delta = (t.headTranslation - (initialTranslation ?? .zero)) * translationScale
-            t.headTranslation = delta
-            
-            lastTrackedPose = t
-            tracking = t
+            lastTrackedPose = newTracking
+            tracking = newTracking
             debugStatus = "Tracking"
         } else {
             if faceLostTime == nil, lastTrackedPose != nil {
@@ -142,7 +116,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         let neutralQ = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
         let decayedQ = simd_slerp(lastQ, neutralQ, t)
         
-        // Decay translation toward zero too
         let decayedTranslation = lastPose.headTranslation * (1.0 - t)
         
         tracking = AvatarFaceTracking(
@@ -158,7 +131,6 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         arSession?.pause()
         arSession = nil
         arDelegate = nil
-        initialTranslation = nil
     }
 }
 
