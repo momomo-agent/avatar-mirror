@@ -6,6 +6,7 @@ import AvatarKit
 @MainActor
 final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var tracking = AvatarFaceTracking()
+    @Published var worldTracking = AvatarFaceTracking()
     @Published var currentAnimoji = "skull"
     @Published var debugStatus = "Starting..."
     
@@ -14,6 +15,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     
     /// Last tracked pose — held when face is lost for smooth decay
     private var lastTrackedPose: AvatarFaceTracking?
+    private var lastWorldPose: AvatarFaceTracking?
     private var faceLostTime: CFTimeInterval?
     private var decayLink: CADisplayLink?
     
@@ -43,14 +45,15 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         let proxy = ARDelegateProxy { [weak self] frame in
             guard let faceAnchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first else {
                 let empty = AvatarFaceTracking()
-                DispatchQueue.main.async { self?.handleTrackingUpdate(empty) }
+                DispatchQueue.main.async { self?.handleTrackingUpdate(camera: empty, world: empty) }
                 return
             }
-            let t = AvatarFaceTracking(
+            let cam = AvatarFaceTracking(
                 faceAnchor: faceAnchor,
                 cameraTransform: frame.camera.transform
             )
-            DispatchQueue.main.async { self?.handleTrackingUpdate(t) }
+            let wld = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
+            DispatchQueue.main.async { self?.handleTrackingUpdate(camera: cam, world: wld) }
         }
         session.delegate = proxy
         self.arSession = session
@@ -63,11 +66,13 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         debugStatus = "Tracking"
     }
     
-    private func handleTrackingUpdate(_ newTracking: AvatarFaceTracking) {
-        if newTracking.isTracking {
+    private func handleTrackingUpdate(camera: AvatarFaceTracking, world: AvatarFaceTracking) {
+        if camera.isTracking {
             stopDecay()
-            lastTrackedPose = newTracking
-            tracking = newTracking
+            lastTrackedPose = camera
+            lastWorldPose = world
+            tracking = camera
+            worldTracking = world
             debugStatus = "Tracking"
         } else {
             if faceLostTime == nil, lastTrackedPose != nil {
@@ -92,7 +97,9 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     }
     
     @objc private func decayTick() {
-        guard let lastPose = lastTrackedPose, let lostTime = faceLostTime else {
+        guard let lastCam = lastTrackedPose,
+              let lastWld = lastWorldPose,
+              let lostTime = faceLostTime else {
             stopDecay()
             return
         }
@@ -105,27 +112,32 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         
         if progress >= 1.0 {
             tracking = AvatarFaceTracking()
+            worldTracking = AvatarFaceTracking()
             stopDecay()
             lastTrackedPose = nil
+            lastWorldPose = nil
             return
         }
         
-        // Interpolate blendshapes toward zero
+        tracking = decayTracking(from: lastCam, t: t)
+        worldTracking = decayTracking(from: lastWld, t: t)
+    }
+    
+    private func decayTracking(from pose: AvatarFaceTracking, t: Float) -> AvatarFaceTracking {
         var blendshapes: [String: Float] = [:]
-        for (key, value) in lastPose.blendshapes {
+        for (key, value) in pose.blendshapes {
             let decayed = value * (1.0 - t)
             if decayed > 0.001 { blendshapes[key] = decayed }
         }
         
-        // Slerp quaternion toward identity
-        let lastQ = lastPose.rawQuaternion ?? lastPose.headRotation.quaternion
+        let lastQ = pose.rawQuaternion ?? pose.headRotation.quaternion
         let neutralQ = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
         let decayedQ = simd_slerp(lastQ, neutralQ, t)
         
-        tracking = AvatarFaceTracking(
+        return AvatarFaceTracking(
             blendshapes: blendshapes,
             rawQuaternion: decayedQ,
-            coordinateSpace: lastPose.coordinateSpace
+            coordinateSpace: pose.coordinateSpace
         )
     }
     
