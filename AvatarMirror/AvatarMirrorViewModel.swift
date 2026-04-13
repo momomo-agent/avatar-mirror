@@ -46,11 +46,13 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 DispatchQueue.main.async { self?.handleTrackingUpdate(empty) }
                 return
             }
-            // Always use world-space Euler delta for rotation.
-            // _applyHeadPose with pointOfView=nil sets headNode.orientation = trackingQ directly.
-            // It expects a DELTA from neutral, not a camera-relative quaternion.
-            // The cameraSpace flag only affects position handling, not rotation.
-            let t = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
+            // World-space Euler delta for rotation (correct for _applyHeadPose with pointOfView=nil)
+            // Camera-relative for translation (small deltas when head moves)
+            let world = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
+            let cam = AvatarFaceTracking(faceAnchor: faceAnchor, cameraTransform: frame.camera.transform)
+            
+            var t = world
+            t.headTranslation = cam.headTranslation
             DispatchQueue.main.async { self?.handleTrackingUpdate(t) }
         }
         session.delegate = proxy
