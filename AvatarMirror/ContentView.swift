@@ -10,7 +10,6 @@ struct ContentView: View {
     @State private var trackingMode: TrackingMode = .camera
     @State private var showFilePicker = false
     @State private var showSamples = false
-    @State private var debugFrameCount = 0
 
     private let bridge = AvatarBridge()
 
@@ -27,28 +26,6 @@ struct ContentView: View {
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
         bridge.applyTracking(tracking)
-        
-        // Debug: log every 60 frames
-        debugFrameCount += 1
-        if debugFrameCount % 60 == 1 {
-            let q = tracking.rawQuaternion ?? tracking.headRotation.quaternion
-            let t = tracking.headTranslation
-            let mode = tracking.coordinateSpace
-            
-            if let wt = bridge.getCameraWorldTransform() {
-                let camQ = simd_quatf(wt)
-                print("[\(mode)] camWT col3=(\(String(format: "%.3f,%.3f,%.3f", wt.columns.3.x, wt.columns.3.y, wt.columns.3.z))) camQ=(\(String(format: "%.3f,%.3f,%.3f,%.3f", camQ.imag.x, camQ.imag.y, camQ.imag.z, camQ.real)))")
-            }
-            print("[\(mode)] q=(\(String(format: "%.4f,%.4f,%.4f,%.4f", q.imag.x, q.imag.y, q.imag.z, q.real))) t=(\(String(format: "%.4f,%.4f,%.4f", t.x, t.y, t.z)))")
-            
-            if let neckPos = bridge.getNeckPosition() {
-                print("[\(mode)] neckPos=(\(String(format: "%.4f,%.4f,%.4f", neckPos.x, neckPos.y, neckPos.z)))")
-            }
-            if let headQ = bridge.getHeadOrientation() {
-                print("[\(mode)] headQ=(\(String(format: "%.4f,%.4f,%.4f,%.4f", headQ.imag.x, headQ.imag.y, headQ.imag.z, headQ.real)))")
-            }
-            print("---")
-        }
     }
 
     private var activeTracking: AvatarFaceTracking {
@@ -118,7 +95,6 @@ struct ContentView: View {
                         ForEach(TrackingMode.allCases, id: \.self) { tm in
                             Button {
                                 trackingMode = tm
-                                debugFrameCount = 0
                                 applyTracking(activeTracking)
                             } label: {
                                 Text(tm.rawValue)

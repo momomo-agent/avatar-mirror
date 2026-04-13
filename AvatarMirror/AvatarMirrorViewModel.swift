@@ -40,6 +40,9 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         }
     }
     
+    /// Debug frame counter for periodic logging
+    private var debugARFrameCount = 0
+    
     private func startTracking() {
         let session = ARSession()
         let proxy = ARDelegateProxy { [weak self] frame in
@@ -48,6 +51,34 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 DispatchQueue.main.async { self?.handleTrackingUpdate(world: empty, camera: empty) }
                 return
             }
+            
+            // === DEBUG POINT A: Raw ARKit values ===
+            if let self {
+                self.debugARFrameCount += 1
+                if self.debugARFrameCount % 60 == 1 {
+                    let ft = faceAnchor.transform
+                    let ct = frame.camera.transform
+                    let inv_ct = ct.inverse
+                    let result = inv_ct * ft
+                    
+                    // Face transform (world space)
+                    let fq = simd_quatf(ft)
+                    print("[A-RAW] face.pos=(\(String(format: "%.4f,%.4f,%.4f", ft.columns.3.x, ft.columns.3.y, ft.columns.3.z)))")
+                    print("[A-RAW] face.quat=(\(String(format: "%.4f,%.4f,%.4f,%.4f", fq.imag.x, fq.imag.y, fq.imag.z, fq.real)))")
+                    
+                    // Camera transform (world space)
+                    let cq = simd_quatf(ct)
+                    print("[A-RAW] cam.pos=(\(String(format: "%.4f,%.4f,%.4f", ct.columns.3.x, ct.columns.3.y, ct.columns.3.z)))")
+                    print("[A-RAW] cam.quat=(\(String(format: "%.4f,%.4f,%.4f,%.4f", cq.imag.x, cq.imag.y, cq.imag.z, cq.real)))")
+                    
+                    // inv(cam) * face result
+                    let rq = simd_quatf(result)
+                    print("[A-RAW] inv*face.pos=(\(String(format: "%.4f,%.4f,%.4f", result.columns.3.x, result.columns.3.y, result.columns.3.z)))")
+                    print("[A-RAW] inv*face.quat=(\(String(format: "%.4f,%.4f,%.4f,%.4f", rq.imag.x, rq.imag.y, rq.imag.z, rq.real)))")
+                    print("[A-RAW] ---")
+                }
+            }
+            
             // Produce both coordinate spaces for A/B comparison.
             // World: Euler delta from faceAnchor.transform, cameraSpace=0
             let world = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
