@@ -46,8 +46,12 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 DispatchQueue.main.async { self?.handleTrackingUpdate(empty) }
                 return
             }
-            // Camera-relative: rotation + translation, let _applyHeadPose handle scene transform
-            let tracking = AvatarFaceTracking(faceAnchor: faceAnchor, cameraTransform: frame.camera.transform, withTranslation: true)
+            // World-space rotation (works with applyTrackingDirect)
+            // Camera-relative translation (for position tracking)
+            let world = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
+            let cam = AvatarFaceTracking(faceAnchor: faceAnchor, cameraTransform: frame.camera.transform)
+            var tracking = world
+            tracking.headTranslation = cam.headTranslation
             DispatchQueue.main.async { self?.handleTrackingUpdate(tracking) }
         }
         session.delegate = proxy
