@@ -253,9 +253,8 @@ final class AudioDrivenAnimator: ObservableObject {
         }
         
         tracking.blendshapes = bs
-        tracking.headRotation = headRotation
-        tracking.isTracking = true
-        tracking.cameraSpace = false  // stay centered, no camera-space perspective
+        tracking.rawQuaternion = headRotation
+        tracking.coordinateSpace = .world  // stay centered, no camera-space perspective
         
         // Fire direct callback for 60fps rendering (bypasses SwiftUI)
         onTrackingUpdate?(tracking)

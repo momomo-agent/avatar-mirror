@@ -11,48 +11,41 @@ struct ContentView: View {
     @State private var showSamples = false
     @State private var showDebug = false
     @StateObject private var debugSettings = DebugSettings()
-    
+
+    private let bridge = AvatarBridge()
+
     enum AvatarMode {
         case faceTracking
         case audioFile
         case microphone
     }
-    
-    private var activeTracking: AvatarFaceTracking {
-        var t: AvatarFaceTracking
-        switch mode {
-        case .faceTracking: t = viewModel.tracking
-        case .audioFile, .microphone: t = audioAnimator.tracking
-        }
-        t.cameraSpace = debugSettings.cameraSpace
+
+    private func applyTracking(_ tracking: AvatarFaceTracking) {
+        var t = tracking
+        t.coordinateSpace = debugSettings.cameraSpace ? .cameraRotationOnly : .world
         if debugSettings.forceCenter {
-            t.headRotation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+            t.rawQuaternion = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
         }
-        return t
+        bridge.applyTracking(t)
     }
-    
+
+    private var activeTracking: AvatarFaceTracking {
+        switch mode {
+        case .faceTracking: return viewModel.tracking
+        case .audioFile, .microphone: return audioAnimator.tracking
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             AvatarView(
-                animoji: viewModel.currentAnimoji,
-                tracking: activeTracking
+                bridge: bridge,
+                character: viewModel.currentAnimoji
             )
-            .trackingSource { callback in
-                audioAnimator.onTrackingUpdate = { [weak debugSettings] tracking in
-                    var t = tracking
-                    if let s = debugSettings {
-                        t.cameraSpace = s.cameraSpace
-                        if s.forceCenter {
-                            t.headRotation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
-                        }
-                    }
-                    callback(t)
-                }
-            }
             .ignoresSafeArea()
-            
+
             VStack {
                 // Status
                 HStack {
@@ -63,9 +56,9 @@ struct ContentView: View {
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
-                
+
                 Spacer()
-                
+
                 // Sample audio picker (shown when in audio mode)
                 if showSamples {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -79,13 +72,12 @@ struct ContentView: View {
                                             .font(.caption)
                                         Text(sample.voice)
                                             .font(.caption2)
-                                            .foregroundStyle(.white.opacity(0.5))
+                                            .foregroundStyle(.secondary)
                                     }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(.white.opacity(0.1))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.ultraThinMaterial)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(.white)
                                 }
                             }
                         }
@@ -93,84 +85,83 @@ struct ContentView: View {
                     }
                     .padding(.bottom, 4)
                 }
-                
-                // Mode switcher
-                HStack(spacing: 12) {
-                    modeButton("Face", icon: "face.smiling", active: mode == .faceTracking) {
-                        mode = .faceTracking
-                    }
-                    modeButton("Mic", icon: "mic.fill", active: mode == .microphone) {
-                        mode = .microphone
-                    }
-                    modeButton("Samples", icon: "music.note.list", active: showSamples) {
-                        showSamples.toggle()
-                    }
-                    
-                    Button {
-                        showFilePicker = true
-                    } label: {
-                        Label("File", systemImage: "doc.fill")
-                            .font(.caption)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.white.opacity(0.1))
-                            .clipShape(Capsule())
-                            .foregroundStyle(.white)
-                    }
-                    
-                    Button {
-                        showDebug.toggle()
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.caption)
-                            .padding(8)
-                            .background(showDebug ? .orange.opacity(0.5) : .white.opacity(0.1))
-                            .clipShape(Circle())
-                            .foregroundStyle(.white)
-                    }
-                }
-                .padding(.bottom, 4)
-                
+
                 // Debug toggles
                 if showDebug {
-                    HStack(spacing: 16) {
-                        debugToggle("Camera Space", isOn: $debugSettings.cameraSpace)
-                        debugToggle("World Space", isOn: $debugSettings.worldSpace)
-                        debugToggle("Center", isOn: $debugSettings.forceCenter)
+                    HStack(spacing: 12) {
+                        debugToggle("cameraSpace", isOn: $debugSettings.cameraSpace)
+                        debugToggle("worldSpace", isOn: $debugSettings.worldSpace)
+                        debugToggle("forceCenter", isOn: $debugSettings.forceCenter)
                     }
                     .padding(.horizontal)
                     .padding(.bottom, 4)
                 }
-                
-                // Animoji picker
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(AvatarView.availableAnimoji, id: \.self) { name in
-                            Button {
-                                viewModel.currentAnimoji = name
-                            } label: {
-                                Text(name.capitalized)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(viewModel.currentAnimoji == name ? .white.opacity(0.3) : .white.opacity(0.1))
-                                    .clipShape(Capsule())
-                                    .foregroundStyle(.white)
-                            }
+
+                // Controls
+                HStack(spacing: 16) {
+                    // Mode picker
+                    Menu {
+                        Button("Face Tracking") { switchMode(to: .faceTracking) }
+                        Button("Audio File") { switchMode(to: .audioFile) }
+                        Button("Microphone") { switchMode(to: .microphone) }
+                    } label: {
+                        Image(systemName: modeIcon)
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                    }
+
+                    if mode == .audioFile {
+                        Button {
+                            showSamples.toggle()
+                        } label: {
+                            Image(systemName: "music.note.list")
+                                .font(.title2)
+                                .foregroundStyle(showSamples ? .orange : .white)
+                        }
+
+                        Button {
+                            showFilePicker = true
+                        } label: {
+                            Image(systemName: "folder")
+                                .font(.title2)
+                                .foregroundStyle(.white)
                         }
                     }
-                    .padding(.horizontal)
+
+                    Spacer()
+
+                    Button {
+                        showDebug.toggle()
+                    } label: {
+                        Image(systemName: "ladybug")
+                            .font(.title2)
+                            .foregroundStyle(showDebug ? .orange : .white.opacity(0.4))
+                    }
                 }
-                .padding(.bottom, 8)
+                .padding(.horizontal)
+                .padding(.bottom, 16)
             }
         }
-        .onAppear { viewModel.start() }
-        .onDisappear {
-            viewModel.stop()
-            audioAnimator.stop()
+        .onChange(of: activeTracking.timestamp) { _, _ in
+            applyTracking(activeTracking)
         }
-        .onChange(of: mode) { _, newMode in
-            switchMode(to: newMode)
+        .onChange(of: debugSettings.cameraSpace) { _, _ in
+            applyTracking(activeTracking)
+        }
+        .onChange(of: debugSettings.forceCenter) { _, _ in
+            applyTracking(activeTracking)
+        }
+        .onAppear {
+            viewModel.start()
+            audioAnimator.onTrackingUpdate = { [weak debugSettings] tracking in
+                guard let s = debugSettings else { return }
+                var t = tracking
+                t.coordinateSpace = s.cameraSpace ? .cameraRotationOnly : .world
+                if s.forceCenter {
+                    t.rawQuaternion = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+                }
+                bridge.applyTracking(t)
+            }
         }
         .fileImporter(
             isPresented: $showFilePicker,
@@ -178,46 +169,40 @@ struct ContentView: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                mode = .audioFile
-                audioAnimator.stop()
-                audioAnimator.startWithAudioFile(url)
+                playFile(url)
             }
         }
-        .statusBarHidden()
     }
-    
+
+    // MARK: - Helpers
+
     private var statusText: String {
         switch mode {
         case .faceTracking: return viewModel.debugStatus
         case .audioFile, .microphone: return audioAnimator.status
         }
     }
-    
-    private func modeButton(_ title: String, icon: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(active ? .blue.opacity(0.5) : .white.opacity(0.1))
-                .clipShape(Capsule())
-                .foregroundStyle(.white)
+
+    private var modeIcon: String {
+        switch mode {
+        case .faceTracking: return "face.smiling"
+        case .audioFile: return "waveform"
+        case .microphone: return "mic"
         }
     }
-    
+
     private func playSample(_ sample: AudioSample) {
-        guard let url = sample.url else {
-            audioAnimator.status = "❌ Sample not found: \(sample.filename)"
-            return
-        }
-        mode = .audioFile
-        viewModel.stop()
-        audioAnimator.stop()
+        guard let url = sample.url else { return }
         audioAnimator.startWithAudioFile(url)
     }
-    
+
+    private func playFile(_ url: URL) {
+        audioAnimator.startWithAudioFile(url)
+    }
+
     private func switchMode(to newMode: AvatarMode) {
         audioAnimator.stop()
+        mode = newMode
         switch newMode {
         case .faceTracking:
             debugSettings.cameraSpace = true
@@ -231,7 +216,7 @@ struct ContentView: View {
             viewModel.stop()
         }
     }
-    
+
     private func debugToggle(_ label: String, isOn: Binding<Bool>) -> some View {
         Button {
             isOn.wrappedValue.toggle()
