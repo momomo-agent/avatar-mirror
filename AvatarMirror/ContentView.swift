@@ -7,10 +7,9 @@ struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
     @StateObject private var audioAnimator = AudioDrivenAnimator()
     @State private var mode: AvatarMode = .faceTracking
+    @State private var trackingMode: TrackingMode = .centered
     @State private var showFilePicker = false
     @State private var showSamples = false
-    @State private var showDebug = false
-    @StateObject private var debugSettings = DebugSettings()
 
     private let bridge = AvatarBridge()
 
@@ -20,11 +19,22 @@ struct ContentView: View {
         case microphone
     }
 
+    enum TrackingMode: String, CaseIterable {
+        case centered = "居中"
+        case depth = "前后"
+        case full = "自由"
+    }
+
     private func applyTracking(_ tracking: AvatarFaceTracking) {
         var t = tracking
-        t.coordinateSpace = debugSettings.cameraSpace ? .cameraRotationOnly : .world
-        if debugSettings.forceCenter {
-            t.rawQuaternion = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+        t.coordinateSpace = .world
+        switch trackingMode {
+        case .centered:
+            t.headTranslation = .zero
+        case .depth:
+            t.headTranslation = SIMD3(0, 0, t.headTranslation.z)
+        case .full:
+            break // keep full translation
         }
         bridge.applyTracking(t)
     }
@@ -59,7 +69,7 @@ struct ContentView: View {
 
                 Spacer()
 
-                // Sample audio picker (shown when in audio mode)
+                // Sample audio picker
                 if showSamples {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -86,20 +96,30 @@ struct ContentView: View {
                     .padding(.bottom, 4)
                 }
 
-                // Debug toggles
-                if showDebug {
-                    HStack(spacing: 12) {
-                        debugToggle("cameraSpace", isOn: $debugSettings.cameraSpace)
-                        debugToggle("worldSpace", isOn: $debugSettings.worldSpace)
-                        debugToggle("forceCenter", isOn: $debugSettings.forceCenter)
+                // Tracking mode picker
+                if mode == .faceTracking {
+                    HStack(spacing: 0) {
+                        ForEach(TrackingMode.allCases, id: \.self) { tm in
+                            Button {
+                                trackingMode = tm
+                                applyTracking(activeTracking)
+                            } label: {
+                                Text(tm.rawValue)
+                                    .font(.caption)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 5)
+                                    .background(trackingMode == tm ? .white.opacity(0.2) : .clear)
+                            }
+                            .foregroundStyle(trackingMode == tm ? .white : .white.opacity(0.4))
+                        }
                     }
-                    .padding(.horizontal)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
                     .padding(.bottom, 4)
                 }
 
                 // Controls
                 HStack(spacing: 16) {
-                    // Mode picker
                     Menu {
                         Button("Face Tracking") { switchMode(to: .faceTracking) }
                         Button("Audio File") { switchMode(to: .audioFile) }
@@ -129,14 +149,6 @@ struct ContentView: View {
                     }
 
                     Spacer()
-
-                    Button {
-                        showDebug.toggle()
-                    } label: {
-                        Image(systemName: "ladybug")
-                            .font(.title2)
-                            .foregroundStyle(showDebug ? .orange : .white.opacity(0.4))
-                    }
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 16)
@@ -145,21 +157,12 @@ struct ContentView: View {
         .onChange(of: activeTracking.timestamp) { _, _ in
             applyTracking(activeTracking)
         }
-        .onChange(of: debugSettings.cameraSpace) { _, _ in
-            applyTracking(activeTracking)
-        }
-        .onChange(of: debugSettings.forceCenter) { _, _ in
-            applyTracking(activeTracking)
-        }
         .onAppear {
             viewModel.start()
-            audioAnimator.onTrackingUpdate = { [weak debugSettings] tracking in
-                guard let s = debugSettings else { return }
+            audioAnimator.onTrackingUpdate = { tracking in
                 var t = tracking
-                t.coordinateSpace = s.cameraSpace ? .cameraRotationOnly : .world
-                if s.forceCenter {
-                    t.rawQuaternion = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
-                }
+                t.coordinateSpace = .world
+                t.headTranslation = .zero
                 bridge.applyTracking(t)
             }
         }
@@ -173,8 +176,6 @@ struct ContentView: View {
             }
         }
     }
-
-    // MARK: - Helpers
 
     private var statusText: String {
         switch mode {
@@ -205,35 +206,12 @@ struct ContentView: View {
         mode = newMode
         switch newMode {
         case .faceTracking:
-            debugSettings.cameraSpace = true
             viewModel.start()
         case .microphone:
-            debugSettings.cameraSpace = false
             viewModel.stop()
             audioAnimator.startWithMicrophone()
         case .audioFile:
-            debugSettings.cameraSpace = false
             viewModel.stop()
         }
     }
-
-    private func debugToggle(_ label: String, isOn: Binding<Bool>) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
-                    .font(.caption2)
-                Text(label)
-                    .font(.caption2)
-            }
-            .foregroundStyle(isOn.wrappedValue ? .orange : .white.opacity(0.5))
-        }
-    }
-}
-
-class DebugSettings: ObservableObject {
-    @Published var cameraSpace = true
-    @Published var worldSpace = false
-    @Published var forceCenter = false
 }
