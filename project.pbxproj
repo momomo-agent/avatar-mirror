@@ -1,0 +1,392 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		001A1C55072C5CADDC2B0DCF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0142F05FA2266C82312C3 /* ContentView.swift */; };
+		22B0EB3AE9FD0C549EFAED1D /* HumanSenseKit in Frameworks */ = {isa = PBXBuildFile; productRef = A8838FD48A588FC4AC2D9BC9 /* HumanSenseKit */; };
+		51B5FDFB42D8F54924665EA5 /* AvatarMirrorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 650A7C05EFEE74FB2F86DE1B /* AvatarMirrorViewModel.swift */; };
+		7FB0A2BB0E92F27D591332E2 /* AudioDrivenAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930058580843871232F489B8 /* AudioDrivenAnimator.swift */; };
+		B1841FF5BE9EF7C79427C2E6 /* AvatarKit in Frameworks */ = {isa = PBXBuildFile; productRef = E983F85B53827BD67FC58481 /* AvatarKit */; };
+		C64148C8389477CEC0A104A8 /* AudioSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B55126FAE95E7D3496F7953 /* AudioSample.swift */; };
+		CED0B2660D0C7A1E00012430 /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = B26D8C023E8720B043F7915B /* Resources */; };
+		EDC267CEA4DD7D54D100C670 /* AvatarMirrorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4A8F38EBA69EADFC5904F1 /* AvatarMirrorApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		2094746AFDE0B93FC4617BB1 /* AvatarKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AvatarKit; path = ../AvatarKit; sourceTree = SOURCE_ROOT; };
+		3B828D0B306EE9F6119D45E9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		650A7C05EFEE74FB2F86DE1B /* AvatarMirrorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarMirrorViewModel.swift; sourceTree = "<group>"; };
+		77E7338A47C0B6601FDE8ADC /* AvatarMirror.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AvatarMirror.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8B55126FAE95E7D3496F7953 /* AudioSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSample.swift; sourceTree = "<group>"; };
+		8FE0142F05FA2266C82312C3 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		930058580843871232F489B8 /* AudioDrivenAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDrivenAnimator.swift; sourceTree = "<group>"; };
+		B26D8C023E8720B043F7915B /* Resources */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Resources; path = AvatarMirror/Resources; sourceTree = SOURCE_ROOT; };
+		DA4A8F38EBA69EADFC5904F1 /* AvatarMirrorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarMirrorApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DD5C90E21C8A05E182B7F65F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				22B0EB3AE9FD0C549EFAED1D /* HumanSenseKit in Frameworks */,
+				B1841FF5BE9EF7C79427C2E6 /* AvatarKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7032AE1EE61D559971A43C96 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				77E7338A47C0B6601FDE8ADC /* AvatarMirror.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		852110F3A1669ADE80488496 = {
+			isa = PBXGroup;
+			children = (
+				CFBF8680C39AAA9E3FAFFEC2 /* AvatarMirror */,
+				D15B99476494211241B38556 /* Packages */,
+				7032AE1EE61D559971A43C96 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CFBF8680C39AAA9E3FAFFEC2 /* AvatarMirror */ = {
+			isa = PBXGroup;
+			children = (
+				930058580843871232F489B8 /* AudioDrivenAnimator.swift */,
+				8B55126FAE95E7D3496F7953 /* AudioSample.swift */,
+				DA4A8F38EBA69EADFC5904F1 /* AvatarMirrorApp.swift */,
+				650A7C05EFEE74FB2F86DE1B /* AvatarMirrorViewModel.swift */,
+				8FE0142F05FA2266C82312C3 /* ContentView.swift */,
+				3B828D0B306EE9F6119D45E9 /* Info.plist */,
+				B26D8C023E8720B043F7915B /* Resources */,
+			);
+			path = AvatarMirror;
+			sourceTree = "<group>";
+		};
+		D15B99476494211241B38556 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				2094746AFDE0B93FC4617BB1 /* AvatarKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		11826EFD820F0B4A3E80BF48 /* AvatarMirror */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 13B288791EE8275265B80F8B /* Build configuration list for PBXNativeTarget "AvatarMirror" */;
+			buildPhases = (
+				F3C993C8814F6024FA171DBF /* Sources */,
+				D3AD601B13185454B4E00D66 /* Resources */,
+				DD5C90E21C8A05E182B7F65F /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AvatarMirror;
+			packageProductDependencies = (
+				A8838FD48A588FC4AC2D9BC9 /* HumanSenseKit */,
+				E983F85B53827BD67FC58481 /* AvatarKit */,
+			);
+			productName = AvatarMirror;
+			productReference = 77E7338A47C0B6601FDE8ADC /* AvatarMirror.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C8F7638FB66BB4B275D0FAF5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					11826EFD820F0B4A3E80BF48 = {
+						DevelopmentTeam = P2GN9QW8E5;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 5A8FE84754C63B2A33915977 /* Build configuration list for PBXProject "AvatarMirror" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 852110F3A1669ADE80488496;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6807DF3F9FB37D222B614BAE /* XCRemoteSwiftPackageReference "HumanSenseKit" */,
+				1626CB3B7A8F6D4CC2D7FCD0 /* XCLocalSwiftPackageReference "../AvatarKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7032AE1EE61D559971A43C96 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				11826EFD820F0B4A3E80BF48 /* AvatarMirror */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D3AD601B13185454B4E00D66 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CED0B2660D0C7A1E00012430 /* Resources in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F3C993C8814F6024FA171DBF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7FB0A2BB0E92F27D591332E2 /* AudioDrivenAnimator.swift in Sources */,
+				C64148C8389477CEC0A104A8 /* AudioSample.swift in Sources */,
+				EDC267CEA4DD7D54D100C670 /* AvatarMirrorApp.swift in Sources */,
+				51B5FDFB42D8F54924665EA5 /* AvatarMirrorViewModel.swift in Sources */,
+				001A1C55072C5CADDC2B0DCF /* ContentView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0E0B0C0F2AD218B1A26991F6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2GN9QW8E5;
+				ENABLE_CODE_SIGNING = YES;
+				INFOPLIST_FILE = AvatarMirror/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.momomo.avatar-mirror";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		17D6F34A08898B27E4654AD1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B937B67D87717BC9390E5B44 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2GN9QW8E5;
+				ENABLE_CODE_SIGNING = YES;
+				INFOPLIST_FILE = AvatarMirror/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.momomo.avatar-mirror";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		BA4B2878CC3CC37754A17AC2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		13B288791EE8275265B80F8B /* Build configuration list for PBXNativeTarget "AvatarMirror" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0E0B0C0F2AD218B1A26991F6 /* Debug */,
+				B937B67D87717BC9390E5B44 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5A8FE84754C63B2A33915977 /* Build configuration list for PBXProject "AvatarMirror" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				17D6F34A08898B27E4654AD1 /* Debug */,
+				BA4B2878CC3CC37754A17AC2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		1626CB3B7A8F6D4CC2D7FCD0 /* XCLocalSwiftPackageReference "../AvatarKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AvatarKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6807DF3F9FB37D222B614BAE /* XCRemoteSwiftPackageReference "HumanSenseKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/momomo-agent/HumanSenseKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A8838FD48A588FC4AC2D9BC9 /* HumanSenseKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6807DF3F9FB37D222B614BAE /* XCRemoteSwiftPackageReference "HumanSenseKit" */;
+			productName = HumanSenseKit;
+		};
+		E983F85B53827BD67FC58481 /* AvatarKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AvatarKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C8F7638FB66BB4B275D0FAF5 /* Project object */;
+}

@@ -1,0 +1,24 @@
+{
+  "originHash" : "c88f49997e6cce7c89ae87e572f9db778bb0add6c1c28296a42fb96f24b224a2",
+  "pins" : [
+    {
+      "identity" : "avatarkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/momomo-agent/AvatarKit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "15a7d17f7aab31d1d88d78cd0e89c346f408ef0a"
+      }
+    },
+    {
+      "identity" : "humansensekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/momomo-agent/HumanSenseKit.git",
+      "state" : {
+        "revision" : "fb34cdf36ae9f06e544ea16c8766fd960a0979f9",
+        "version" : "1.2.0"
+      }
+    }
+  ],
+  "version" : 3
+}
