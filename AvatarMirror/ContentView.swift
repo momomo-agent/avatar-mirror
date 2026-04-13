@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var trackingMode: TrackingMode = .centered
     @State private var showFilePicker = false
     @State private var showSamples = false
+    @State private var neckBasePosition: SIMD3<Float>?
 
     private let bridge = AvatarBridge()
 
@@ -29,17 +30,23 @@ struct ContentView: View {
         var t = tracking
         t.coordinateSpace = .world
         
+        // Capture neck's default position on first call
+        if neckBasePosition == nil {
+            neckBasePosition = bridge.getNeckPosition() ?? .zero
+        }
+        let base = neckBasePosition ?? .zero
+        
         // Use applyTrackingDirect for blendshapes + rotation (bypasses _applyHeadPose)
         bridge.applyTrackingDirect(t)
         
-        // Manually set neck position for translation modes
+        // Add translation delta on top of the neck's default position
         switch trackingMode {
         case .centered:
-            break // no translation
+            bridge.setNeckPosition(base)
         case .depth:
-            bridge.setNeckPosition(SIMD3(0, 0, t.headTranslation.z))
+            bridge.setNeckPosition(base + SIMD3(0, 0, t.headTranslation.z))
         case .full:
-            bridge.setNeckPosition(t.headTranslation)
+            bridge.setNeckPosition(base + t.headTranslation)
         }
     }
 
