@@ -27,10 +27,12 @@ struct ContentView: View {
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
         var t = tracking
+        // Always cameraSpace=1 — let _applyHeadPose do W_scene × R for rotation.
+        // Only vary translation based on tracking mode.
         switch trackingMode {
         case .centered:
             t.headTranslation = .zero
-            t.coordinateSpace = .world
+            t.coordinateSpace = .cameraRotationOnly
         case .depth:
             t.headTranslation = SIMD3(0, 0, t.headTranslation.z)
             t.coordinateSpace = .cameraFull
