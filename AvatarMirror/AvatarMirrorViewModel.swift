@@ -2,6 +2,7 @@ import SwiftUI
 import ARKit
 import AVFoundation
 import AvatarKit
+import simd
 
 @MainActor
 final class AvatarMirrorViewModel: NSObject, ObservableObject {
@@ -9,6 +10,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var trackingCamera = AvatarFaceTracking()
     @Published var currentAnimoji = "skull"
     @Published var debugStatus = "Starting..."
+    var debugFrameCount = 0
     
     private var arSession: ARSession?
     private var arDelegate: ARDelegateProxy?
@@ -77,6 +79,37 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                     print("[A-RAW] inv*face.quat=(\(String(format: "%.4f,%.4f,%.4f,%.4f", rq.imag.x, rq.imag.y, rq.imag.z, rq.real)))")
                     print("[A-RAW] ---")
                 }
+            }
+            
+            // === DEBUG: Log displayCenterTransform and face transform ===
+            if self?.debugFrameCount ?? 0 < 5 {
+                self?.debugFrameCount = (self?.debugFrameCount ?? 0) + 1
+                
+                // displayCenterTransform is private on ARCamera
+                let camera = frame.camera as AnyObject
+                let dctSel = NSSelectorFromString("displayCenterTransform")
+                if camera.responds(to: dctSel) {
+                    // Returns simd_float4x4 (64 bytes) — use NSInvocation or just note it exists
+                    print("[DCT] displayCenterTransform exists on ARCamera")
+                } else {
+                    print("[DCT] displayCenterTransform NOT found on ARCamera")
+                }
+                
+                let ft = faceAnchor.transform
+                let fq = simd_quatf(ft)
+                print("[DCT] face.t=(\(String(format: "%.4f,%.4f,%.4f", ft.columns.3.x, ft.columns.3.y, ft.columns.3.z)))")
+                print("[DCT] face.q=(\(String(format: "%.4f,%.4f,%.4f,%.4f", fq.imag.x, fq.imag.y, fq.imag.z, fq.real)))")
+                
+                // Log camera transform for reference
+                let ct = frame.camera.transform
+                let cq = simd_quatf(ct)
+                print("[DCT] cam.t=(\(String(format: "%.4f,%.4f,%.4f", ct.columns.3.x, ct.columns.3.y, ct.columns.3.z)))")
+                print("[DCT] cam.q=(\(String(format: "%.4f,%.4f,%.4f,%.4f", cq.imag.x, cq.imag.y, cq.imag.z, cq.real)))")
+                
+                // Log what we're putting in the buffer
+                print("[DCT] ourQ=(\(String(format: "%.4f,%.4f,%.4f,%.4f", fq.imag.x, fq.imag.y, fq.imag.z, fq.real)))")
+                print("[DCT] ourT=(\(String(format: "%.4f,%.4f,%.4f", ft.columns.3.x * 50, ft.columns.3.y * 20, ft.columns.3.z * 100)))")
+                print("[DCT] ---")
             }
             
             // Bit-exact with Apple's _AVTTrackingDataFromARFrame (constrainHeadPose=1).
