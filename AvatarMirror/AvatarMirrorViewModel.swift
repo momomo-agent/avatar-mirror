@@ -113,48 +113,10 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 print("[DCT] ---")
             }
             
-            // World mode: bit-exact with Apple's _AVTTrackingDataFromARFrame
-            let world = AvatarFaceTracking(faceAnchor: faceAnchor)
-            
-            // Camera mode: inverse(camera) × face, cameraSpace=1
-            // Sensor is landscape-left; apply -90° Z rotation to align with portrait display.
-            // This is what Apple's displayCenterTransform does internally.
-            let portraitCorrection = simd_float4x4(simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(0, 0, 1)))
-            let correctedCamera = frame.camera.transform * portraitCorrection
-            let invCam = simd_inverse(correctedCamera)
-            let relativeTransform = invCam * faceAnchor.transform
-            let cameraQ = simd_quatf(relativeTransform)
-            let cameraT = SIMD3<Float>(
-                relativeTransform.columns.3.x * 50,
-                relativeTransform.columns.3.y * 20,
-                relativeTransform.columns.3.z * 100
-            )
-            var cameraTracking = AvatarFaceTracking(faceAnchor: faceAnchor)
-            cameraTracking.rawQuaternion = cameraQ
-            cameraTracking.headTranslation = cameraT
-            cameraTracking.coordinateSpace = .cameraRotationOnly
-            let camera = cameraTracking
-            
-            // Apple AR mode (constrainHeadPose=0):
-            // 1. face' = AVTARKitTransformToSceneKitTransformMatrix × face (identity for portrait)
-            // 2. Scale translation uniformly by 100.0 (0x42C80000)
-            // 3. scaledFace × camera.transform
-            // 4. cameraSpace=1
-            var scaledFace = faceAnchor.transform
-            scaledFace.columns.3 = SIMD4<Float>(
-                scaledFace.columns.3.x * 100,
-                scaledFace.columns.3.y * 100,
-                scaledFace.columns.3.z * 100,
-                scaledFace.columns.3.w
-            )
-            let arResult = scaledFace * frame.camera.transform
-            let arQ = simd_quatf(arResult)
-            let arT = SIMD3<Float>(arResult.columns.3.x, arResult.columns.3.y, arResult.columns.3.z)
-            var appleARTracking = AvatarFaceTracking(faceAnchor: faceAnchor)
-            appleARTracking.rawQuaternion = arQ
-            appleARTracking.headTranslation = arT
-            appleARTracking.coordinateSpace = .cameraRotationOnly
-            let appleAR = appleARTracking
+            // All three modes computed by AvatarKit
+            let world = AvatarFaceTracking(faceAnchor: faceAnchor, frame: frame, mode: .world)
+            let camera = AvatarFaceTracking(faceAnchor: faceAnchor, frame: frame, mode: .camera)
+            let appleAR = AvatarFaceTracking(faceAnchor: faceAnchor, frame: frame, mode: .appleAR)
             
             DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera, appleAR: appleAR) }
         }

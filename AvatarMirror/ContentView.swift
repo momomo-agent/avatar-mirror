@@ -7,7 +7,7 @@ struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
     @StateObject private var audioAnimator = AudioDrivenAnimator()
     @State private var mode: AvatarMode = .faceTracking
-    @State private var trackingMode: TrackingMode = .camera
+    @State private var trackingMode: AvatarFaceTracking.TrackingMode = .camera
     @State private var showFilePicker = false
     @State private var showSamples = false
 
@@ -17,12 +17,6 @@ struct ContentView: View {
         case faceTracking
         case audioFile
         case microphone
-    }
-
-    enum TrackingMode: String, CaseIterable {
-        case world = "World"
-        case camera = "Camera"
-        case appleAR = "Apple AR"
     }
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
@@ -94,7 +88,7 @@ struct ContentView: View {
                 // Tracking mode picker
                 if mode == .faceTracking {
                     HStack(spacing: 0) {
-                        ForEach(TrackingMode.allCases, id: \.self) { tm in
+                        ForEach(AvatarFaceTracking.TrackingMode.allCases, id: \.self) { tm in
                             Button {
                                 trackingMode = tm
                                 applyTracking(activeTracking)
