@@ -135,16 +135,20 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             cameraTracking.coordinateSpace = .cameraRotationOnly
             let camera = cameraTracking
             
-            // Apple AR mode (constrainHeadPose=0): faceTransform × camera.transform
-            // For portrait, AVTARKitTransformToSceneKitTransformMatrix = identity
-            // Translation scaled by 100000, cameraSpace=1
-            let arTransform = faceAnchor.transform * frame.camera.transform
-            let arQ = simd_quatf(arTransform)
-            let arT = SIMD3<Float>(
-                faceAnchor.transform.columns.3.x * 100000,
-                faceAnchor.transform.columns.3.y * 100000,
-                faceAnchor.transform.columns.3.z * 100000
+            // Apple AR mode (constrainHeadPose=0):
+            // 1. Scale face translation by 100000
+            // 2. Multiply scaled face × camera.transform
+            // 3. Extract quaternion and translation from result
+            var scaledFace = faceAnchor.transform
+            scaledFace.columns.3 = SIMD4<Float>(
+                scaledFace.columns.3.x * 100000,
+                scaledFace.columns.3.y * 100000,
+                scaledFace.columns.3.z * 100000,
+                scaledFace.columns.3.w
             )
+            let arResult = scaledFace * frame.camera.transform
+            let arQ = simd_quatf(arResult)
+            let arT = SIMD3<Float>(arResult.columns.3.x, arResult.columns.3.y, arResult.columns.3.z)
             var appleARTracking = AvatarFaceTracking(faceAnchor: faceAnchor)
             appleARTracking.rawQuaternion = arQ
             appleARTracking.headTranslation = arT
