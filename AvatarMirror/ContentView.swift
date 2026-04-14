@@ -22,6 +22,7 @@ struct ContentView: View {
     enum TrackingMode: String, CaseIterable {
         case world = "World"
         case camera = "Camera"
+        case appleAR = "Apple AR"
     }
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
@@ -34,6 +35,7 @@ struct ContentView: View {
             switch trackingMode {
             case .world: return viewModel.trackingWorld
             case .camera: return viewModel.trackingCamera
+            case .appleAR: return viewModel.trackingAppleAR
             }
         case .audioFile, .microphone: return audioAnimator.tracking
         }

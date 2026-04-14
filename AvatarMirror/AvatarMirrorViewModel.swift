@@ -8,6 +8,7 @@ import simd
 final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var trackingWorld = AvatarFaceTracking()
     @Published var trackingCamera = AvatarFaceTracking()
+    @Published var trackingAppleAR = AvatarFaceTracking()
     @Published var currentAnimoji = "skull"
     @Published var debugStatus = "Starting..."
     var debugFrameCount = 0
@@ -50,7 +51,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         let proxy = ARDelegateProxy { [weak self] frame in
             guard let faceAnchor = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first else {
                 let empty = AvatarFaceTracking()
-                DispatchQueue.main.async { self?.handleTrackingUpdate(world: empty, camera: empty) }
+                DispatchQueue.main.async { self?.handleTrackingUpdate(world: empty, camera: empty, appleAR: empty) }
                 return
             }
             
@@ -133,7 +134,24 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             cameraTracking.headTranslation = cameraT
             cameraTracking.coordinateSpace = .cameraRotationOnly
             let camera = cameraTracking
-            DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera) }
+            
+            // Apple AR mode (constrainHeadPose=0): faceTransform × camera.transform
+            // For portrait, AVTARKitTransformToSceneKitTransformMatrix = identity
+            // Translation scaled by 100000, cameraSpace=1
+            let arTransform = faceAnchor.transform * frame.camera.transform
+            let arQ = simd_quatf(arTransform)
+            let arT = SIMD3<Float>(
+                faceAnchor.transform.columns.3.x * 100000,
+                faceAnchor.transform.columns.3.y * 100000,
+                faceAnchor.transform.columns.3.z * 100000
+            )
+            var appleARTracking = AvatarFaceTracking(faceAnchor: faceAnchor)
+            appleARTracking.rawQuaternion = arQ
+            appleARTracking.headTranslation = arT
+            appleARTracking.coordinateSpace = .cameraRotationOnly
+            let appleAR = appleARTracking
+            
+            DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera, appleAR: appleAR) }
         }
         session.delegate = proxy
         self.arSession = session
@@ -176,7 +194,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
         )
     }
     
-    private func handleTrackingUpdate(world: AvatarFaceTracking, camera: AvatarFaceTracking) {
+    private func handleTrackingUpdate(world: AvatarFaceTracking, camera: AvatarFaceTracking, appleAR: AvatarFaceTracking) {
         if world.isTracking {
             stopDecay()
             lastTrackedWorld = world
@@ -194,6 +212,12 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 rawQuaternion: camera.rawQuaternion,
                 headTranslation: camera.headTranslation,
                 coordinateSpace: camera.coordinateSpace
+            )
+            trackingAppleAR = AvatarFaceTracking(
+                blendshapes: smoothedWorld.blendshapes,
+                rawQuaternion: appleAR.rawQuaternion,
+                headTranslation: appleAR.headTranslation,
+                coordinateSpace: appleAR.coordinateSpace
             )
             debugStatus = "Tracking"
         } else {
