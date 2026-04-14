@@ -121,8 +121,13 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             let appleAR = AvatarFaceTracking(faceAnchor: faceAnchor, frame: frame, mode: .appleAR)
             
             DispatchQueue.main.async {
+                // Only keep the latest frame to avoid ARSession retention warning
                 self?.lastARFrame = frame
                 self?.handleTrackingUpdate(world: world, camera: camera, appleAR: appleAR)
+                // Release frame reference after a short delay to allow CMP to use it
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self?.lastARFrame = nil
+                }
             }
         }
         session.delegate = proxy
