@@ -12,6 +12,8 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var currentAnimoji = "skull"
     @Published var debugStatus = "Starting..."
     var debugFrameCount = 0
+    /// Last ARFrame for Apple buffer comparison
+    var lastARFrame: ARFrame?
     
     private var arSession: ARSession?
     private var arDelegate: ARDelegateProxy?
@@ -118,7 +120,10 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             let camera = AvatarFaceTracking(faceAnchor: faceAnchor, frame: frame, mode: .camera)
             let appleAR = AvatarFaceTracking(faceAnchor: faceAnchor, frame: frame, mode: .appleAR)
             
-            DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera, appleAR: appleAR) }
+            DispatchQueue.main.async {
+                self?.lastARFrame = frame
+                self?.handleTrackingUpdate(world: world, camera: camera, appleAR: appleAR)
+            }
         }
         session.delegate = proxy
         self.arSession = session

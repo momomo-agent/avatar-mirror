@@ -20,7 +20,7 @@ struct ContentView: View {
     }
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
-        bridge.applyTracking(tracking)
+        bridge.applyTracking(tracking, frame: viewModel.lastARFrame)
     }
 
     private var activeTracking: AvatarFaceTracking {
