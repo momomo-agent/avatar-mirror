@@ -79,15 +79,11 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 }
             }
             
-            // Produce both coordinate spaces for A/B comparison.
-            // World: Euler delta from faceAnchor.transform, cameraSpace=0
-            let world = AvatarFaceTracking(faceAnchor: faceAnchor, worldSpace: true)
-            // Camera: inv(camera) × face, cameraSpace=1
-            let camera = AvatarFaceTracking(
-                faceAnchor: faceAnchor,
-                cameraTransform: frame.camera.transform,
-                withTranslation: true
-            )
+            // Bit-exact with Apple's _AVTTrackingDataFromARFrame (constrainHeadPose=1).
+            // World mode: quaternion = simd_quatf(faceTransform), translation scaled by (50,20,100).
+            let world = AvatarFaceTracking(faceAnchor: faceAnchor)
+            // Same data for camera slot (no separate camera mode needed — Apple uses world mode)
+            let camera = world
             DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera) }
         }
         session.delegate = proxy
