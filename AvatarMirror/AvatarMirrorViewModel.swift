@@ -118,7 +118,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             // Camera mode: inverse(camera) × face, cameraSpace=1
             // Sensor is landscape-left; apply -90° Z rotation to align with portrait display.
             // This is what Apple's displayCenterTransform does internally.
-            let portraitCorrection = simd_float4x4(simd_quatf(angle: -.pi / 2, axis: SIMD3<Float>(0, 0, 1)))
+            let portraitCorrection = simd_float4x4(simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(0, 0, 1)))
             let correctedCamera = frame.camera.transform * portraitCorrection
             let invCam = simd_inverse(correctedCamera)
             let relativeTransform = invCam * faceAnchor.transform
