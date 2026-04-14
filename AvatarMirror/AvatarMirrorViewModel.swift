@@ -136,14 +136,15 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
             let camera = cameraTracking
             
             // Apple AR mode (constrainHeadPose=0):
-            // 1. Scale face translation by 100000
-            // 2. Multiply scaled face × camera.transform
-            // 3. Extract quaternion and translation from result
+            // Apple does: scaledFace × camera.transform
+            // Scale: Apple uses 100000 but that pushes avatar out of scene.
+            // Use same scale as world mode for now; the key difference is
+            // the quaternion comes from face×camera instead of just face.
             var scaledFace = faceAnchor.transform
             scaledFace.columns.3 = SIMD4<Float>(
-                scaledFace.columns.3.x * 100000,
-                scaledFace.columns.3.y * 100000,
-                scaledFace.columns.3.z * 100000,
+                scaledFace.columns.3.x * 50,
+                scaledFace.columns.3.y * 20,
+                scaledFace.columns.3.z * 100,
                 scaledFace.columns.3.w
             )
             let arResult = scaledFace * frame.camera.transform
