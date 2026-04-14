@@ -184,18 +184,21 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 headTranslation: world.headTranslation,
                 coordinateSpace: world.coordinateSpace
             )
+            trackingWorld.trackingMode = world.trackingMode
             trackingCamera = AvatarFaceTracking(
                 blendshapes: smoothedWorld.blendshapes,
                 rawQuaternion: camera.rawQuaternion,
                 headTranslation: camera.headTranslation,
                 coordinateSpace: camera.coordinateSpace
             )
+            trackingCamera.trackingMode = camera.trackingMode
             trackingAppleAR = AvatarFaceTracking(
                 blendshapes: smoothedWorld.blendshapes,
                 rawQuaternion: appleAR.rawQuaternion,
                 headTranslation: appleAR.headTranslation,
                 coordinateSpace: appleAR.coordinateSpace
             )
+            trackingAppleAR.trackingMode = appleAR.trackingMode
             debugStatus = "Tracking"
         } else {
             if faceLostTime == nil, lastTrackedWorld != nil {
