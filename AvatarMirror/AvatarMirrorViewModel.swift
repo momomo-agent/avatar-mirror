@@ -112,11 +112,24 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
                 print("[DCT] ---")
             }
             
-            // Bit-exact with Apple's _AVTTrackingDataFromARFrame (constrainHeadPose=1).
-            // World mode: quaternion = simd_quatf(faceTransform), translation scaled by (50,20,100).
+            // World mode: bit-exact with Apple's _AVTTrackingDataFromARFrame
             let world = AvatarFaceTracking(faceAnchor: faceAnchor)
-            // Same data for camera slot (no separate camera mode needed — Apple uses world mode)
-            let camera = world
+            
+            // Camera mode: inverse(camera) × face, cameraSpace=1
+            // This is what worked before — keep it as the camera option
+            let invCam = simd_inverse(frame.camera.transform)
+            let relativeTransform = invCam * faceAnchor.transform
+            let cameraQ = simd_quatf(relativeTransform)
+            let cameraT = SIMD3<Float>(
+                relativeTransform.columns.3.x * 50,
+                relativeTransform.columns.3.y * 20,
+                relativeTransform.columns.3.z * 100
+            )
+            var cameraTracking = AvatarFaceTracking(faceAnchor: faceAnchor)
+            cameraTracking.rawQuaternion = cameraQ
+            cameraTracking.headTranslation = cameraT
+            cameraTracking.coordinateSpace = .cameraRotationOnly
+            let camera = cameraTracking
             DispatchQueue.main.async { self?.handleTrackingUpdate(world: world, camera: camera) }
         }
         session.delegate = proxy
