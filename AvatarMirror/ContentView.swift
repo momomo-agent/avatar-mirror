@@ -141,9 +141,6 @@ struct ContentView: View {
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
                 t.coordinateSpace = .world
-                // Translation disabled — calibrate scale first
-                t.bodyTranslation = SIMD3(0, 0, 0)
-                t.headTranslation = .zero
                 #if !targetEnvironment(simulator)
                 bridge.applyTrackingDirect(t)
                 #endif
