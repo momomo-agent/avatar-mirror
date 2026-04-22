@@ -10,8 +10,6 @@ struct ContentView: View {
     @State private var mode: AvatarMode = .autonomous
     @State private var trackingMode: AvatarFaceTracking.TrackingMode = .camera
     @State private var showFilePicker = false
-    @State private var showSamples = false
-    @State private var showControls = true
 
     #if !targetEnvironment(simulator)
     private let bridge = AvatarBridge()
@@ -44,7 +42,7 @@ struct ContentView: View {
             .ignoresSafeArea()
             #endif
 
-            VStack {
+            VStack(spacing: 0) {
                 // Status bar
                 HStack {
                     Text(statusText)
@@ -57,119 +55,68 @@ struct ContentView: View {
 
                 Spacer()
 
-                // Autonomous controls
-                if mode == .autonomous && showControls {
-                    autonomousControlsPanel
-                        .padding(.bottom, 4)
-                }
-
-                // Character picker (always visible)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(AvatarBridge.availableAnimoji, id: \.self) { name in
-                            Button {
-                                viewModel.currentAnimoji = name
-                            } label: {
-                                Text(name)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(viewModel.currentAnimoji == name ? Color.blue : Color.white.opacity(0.15))
-                                    .foregroundStyle(.white)
-                                    .cornerRadius(6)
-                            }
+                // All controls flattened — each row scrolls horizontally
+                VStack(spacing: 6) {
+                    // Row 1: Mode picker
+                    scrollRow {
+                        ForEach(AvatarMode.allCases, id: \.self) { m in
+                            chip(m.rawValue, active: mode == m) { mode = m }
                         }
                     }
-                    .padding(.horizontal)
-                }
-                .frame(height: 32)
-                .padding(.bottom, 4)
 
-                // Sample audio picker
-                if showSamples {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                    // Row 2: State (autonomous)
+                    if mode == .autonomous {
+                        scrollRow {
+                            chip("Idle", active: autonomous.currentState == .idle) { autonomous.goIdle() }
+                            chip("Listen", active: autonomous.currentState == .listening) { autonomous.startListening() }
+                            chip("Think", active: autonomous.currentState == .thinking) { autonomous.startThinking() }
+                            Divider().frame(height: 20).background(Color.white.opacity(0.2))
+                            chip("Nod", color: .orange) { autonomous.nod() }
+                            chip("Shake", color: .orange) { autonomous.shake() }
+                            chip("Tilt", color: .orange) { autonomous.tilt() }
+                            Divider().frame(height: 20).background(Color.white.opacity(0.2))
+                            chipEmoji("😊") { autonomous.playExpression(.smile) }
+                            chipEmoji("😮") { autonomous.playExpression(.surprised) }
+                            chipEmoji("😢") { autonomous.playExpression(.sad) }
+                            chipEmoji("😠") { autonomous.playExpression(.angry) }
+                            chipEmoji("😜") { autonomous.playExpression(.tongueOut) }
+                        }
+                    }
+
+                    // Row 3: Audio samples
+                    if mode == .autonomous || mode == .audioFile {
+                        scrollRow {
                             ForEach(AudioSample.all) { sample in
-                                Button {
+                                chip("\(sample.voice) \(sample.name)") {
                                     if mode == .autonomous {
                                         autonomous.speakWithSample(sample)
                                     } else {
                                         audioAnimator.startWithAudioFile(sample.url!)
                                     }
-                                } label: {
-                                    VStack(spacing: 2) {
-                                        Text(sample.voice)
-                                            .font(.caption2)
-                                        Text(sample.name)
-                                            .font(.caption2)
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(.ultraThinMaterial)
-                                    .cornerRadius(8)
                                 }
                             }
-                        }
-                        .padding(.horizontal)
-                    }
-                    .frame(height: 60)
-                }
-
-                // Bottom toolbar
-                HStack(spacing: 16) {
-                    // Mode picker
-                    Picker("Mode", selection: $mode) {
-                        ForEach(AvatarMode.allCases, id: \.self) { m in
-                            Text(m.rawValue).tag(m)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 240)
-
-                    Spacer()
-
-                    // Controls toggle (autonomous)
-                    if mode == .autonomous {
-                        Button {
-                            showControls.toggle()
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
-                                .foregroundStyle(.white)
+                            chip("File…", color: .gray) { showFilePicker = true }
                         }
                     }
 
-                    // Samples toggle
-                    if mode == .audioFile || mode == .autonomous {
-                        Button {
-                            showSamples.toggle()
-                        } label: {
-                            Image(systemName: "music.note.list")
-                                .foregroundStyle(.white)
-                        }
-                    }
-
-                    // File picker
-                    if mode == .audioFile {
-                        Button {
-                            showFilePicker = true
-                        } label: {
-                            Image(systemName: "folder")
-                                .foregroundStyle(.white)
-                        }
-                    }
-
-                    // Tracking mode (face tracking only)
+                    // Row 4: Tracking mode (face tracking)
                     if mode == .faceTracking {
-                        Picker("", selection: $trackingMode) {
-                            Text("world").tag(AvatarFaceTracking.TrackingMode.world)
-                            Text("camera").tag(AvatarFaceTracking.TrackingMode.camera)
-                            Text("appleAR").tag(AvatarFaceTracking.TrackingMode.appleAR)
+                        scrollRow {
+                            chip("World", active: trackingMode == .world) { trackingMode = .world }
+                            chip("Camera", active: trackingMode == .camera) { trackingMode = .camera }
+                            chip("AppleAR", active: trackingMode == .appleAR) { trackingMode = .appleAR }
                         }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 200)
+                    }
+
+                    // Row 5: Characters
+                    scrollRow {
+                        ForEach(AvatarBridge.availableAnimoji, id: \.self) { name in
+                            chip(name, active: viewModel.currentAnimoji == name) {
+                                viewModel.currentAnimoji = name
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal)
                 .padding(.bottom, 8)
             }
         }
@@ -214,72 +161,34 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Autonomous Controls
+    // MARK: - Reusable UI
 
-    private var autonomousControlsPanel: some View {
-        VStack(spacing: 8) {
-            // State buttons
-            HStack(spacing: 8) {
-                stateButton("Idle", state: .idle) { autonomous.goIdle() }
-                stateButton("Listen", state: .listening) { autonomous.startListening() }
-                stateButton("Think", state: .thinking) { autonomous.startThinking() }
-            }
-
-            // Gesture buttons
-            HStack(spacing: 8) {
-                gestureButton("Nod") { autonomous.nod() }
-                gestureButton("Shake") { autonomous.shake() }
-                gestureButton("Tilt") { autonomous.tilt() }
-            }
-
-            // Expression buttons
-            HStack(spacing: 8) {
-                expressionButton("😊", preset: .smile)
-                expressionButton("😮", preset: .surprised)
-                expressionButton("😢", preset: .sad)
-                expressionButton("😠", preset: .angry)
-                expressionButton("😜", preset: .tongueOut)
-            }
+    private func scrollRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) { content() }.padding(.horizontal, 12)
         }
-        .padding(12)
-        .background(.ultraThinMaterial)
-        .cornerRadius(12)
-        .padding(.horizontal)
     }
 
-    private func stateButton(_ label: String, state: AvatarBehaviorEngine.BehaviorState, action: @escaping () -> Void) -> some View {
+    private func chip(_ label: String, color: Color = .blue, active: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.caption)
-                .padding(.horizontal, 12)
+                .font(.caption2)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(autonomous.currentState == state ? Color.blue : Color.gray.opacity(0.3))
+                .background(active ? color : Color.white.opacity(0.12))
                 .foregroundStyle(.white)
                 .cornerRadius(6)
         }
     }
 
-    private func gestureButton(_ label: String, action: @escaping () -> Void) -> some View {
+    private func chipEmoji(_ emoji: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.orange.opacity(0.3))
-                .foregroundStyle(.white)
-                .cornerRadius(6)
-        }
-    }
-
-    private func expressionButton(_ emoji: String, preset: ExpressionPreset) -> some View {
-        Button {
-            autonomous.playExpression(preset)
-        } label: {
             Text(emoji)
-                .font(.title3)
-                .frame(width: 40, height: 40)
-                .background(Color.purple.opacity(0.3))
-                .cornerRadius(8)
+                .font(.callout)
+                .frame(width: 32, height: 28)
+                .background(Color.purple.opacity(0.25))
+                .cornerRadius(6)
         }
     }
 
