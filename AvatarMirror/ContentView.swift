@@ -141,6 +141,7 @@ struct ContentView: View {
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
                 t.coordinateSpace = .world
+                t.headTranslation.z -= 40  // viewing distance
                 #if !targetEnvironment(simulator)
                 bridge.applyTrackingDirect(t)
                 #endif
