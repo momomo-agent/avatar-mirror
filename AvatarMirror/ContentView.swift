@@ -140,11 +140,14 @@ struct ContentView: View {
             }
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
-                // Use camera coordinate space (matches Face-Camera mode)
-                t.coordinateSpace = .cameraRotationOnly
-                // Position avatar at natural viewing distance
-                // Face-Camera typical values: x≈0, y≈-2..2, z≈-35..-45
-                t.headTranslation = SIMD3(0, 0, -40)
+                t.coordinateSpace = .world
+                // Scale idle spatial movement to visible but grounded range
+                // Raw values ~0.002-0.009m → want ~0.5-2.0 avatar units of subtle sway
+                t.headTranslation = SIMD3(
+                    t.headTranslation.x * 200,
+                    t.headTranslation.y * 150,
+                    t.headTranslation.z * 200 - 40
+                )
                 #if !targetEnvironment(simulator)
                 bridge.applyTracking(t)
                 #endif
