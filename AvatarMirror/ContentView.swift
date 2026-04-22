@@ -11,7 +11,9 @@ struct ContentView: View {
     @State private var showFilePicker = false
     @State private var showSamples = false
 
+    #if !targetEnvironment(simulator)
     private let bridge = AvatarBridge()
+    #endif
 
     enum AvatarMode {
         case faceTracking
@@ -20,7 +22,9 @@ struct ContentView: View {
     }
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
+        #if !targetEnvironment(simulator)
         bridge.applyTracking(tracking, frame: viewModel.lastARFrame)
+        #endif
     }
 
     private var activeTracking: AvatarFaceTracking {
@@ -39,11 +43,15 @@ struct ContentView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
+            #if targetEnvironment(simulator)
+            simulatorPlaceholder
+            #else
             AvatarView(
                 bridge: bridge,
                 character: viewModel.currentAnimoji
             )
             .ignoresSafeArea()
+            #endif
 
             VStack {
                 // Status
@@ -155,7 +163,9 @@ struct ContentView: View {
                 var t = tracking
                 t.coordinateSpace = .world
                 t.headTranslation = .zero
+                #if !targetEnvironment(simulator)
                 bridge.applyTracking(t)
+                #endif
             }
         }
         .fileImporter(
@@ -206,4 +216,22 @@ struct ContentView: View {
             viewModel.stop()
         }
     }
+
+    // MARK: - Simulator Placeholder
+
+    #if targetEnvironment(simulator)
+    private var simulatorPlaceholder: some View {
+        VStack(spacing: 16) {
+            Text("🦊")
+                .font(.system(size: 120))
+            Text(viewModel.currentAnimoji.capitalized)
+                .font(.title3)
+                .foregroundStyle(.white.opacity(0.7))
+            Text("Simulator — AVTView requires device")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    #endif
 }
