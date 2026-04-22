@@ -304,17 +304,23 @@ struct ContentView: View {
 
     private var simulatorPlaceholder: some View {
         VStack(spacing: 16) {
-            Text(characterEmoji)
-                .font(.system(size: 120))
+            if let img = AvatarCatalog.headTexture(for: viewModel.currentAnimoji) {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 200, height: 200)
+                    .clipShape(Circle())
+                    .shadow(color: .white.opacity(0.1), radius: 20)
+            } else {
+                Text(characterEmoji)
+                    .font(.system(size: 80))
+            }
             Text(viewModel.currentAnimoji.capitalized)
                 .font(.title3)
                 .foregroundStyle(.white.opacity(0.7))
-            Text("Simulator — AVTView requires device")
+            Text("Simulator \u{2014} AVTView requires device")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text("Tap to change character")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
