@@ -6,37 +6,28 @@ import simd
 struct ContentView: View {
     @StateObject private var viewModel = AvatarMirrorViewModel()
     @StateObject private var audioAnimator = AudioDrivenAnimator()
-    @State private var mode: AvatarMode = .faceTracking
+    @StateObject private var autonomous = AutonomousController()
+    @State private var mode: AvatarMode = .autonomous
     @State private var trackingMode: AvatarFaceTracking.TrackingMode = .camera
     @State private var showFilePicker = false
     @State private var showSamples = false
+    @State private var showControls = false
 
     #if !targetEnvironment(simulator)
     private let bridge = AvatarBridge()
     #endif
 
-    enum AvatarMode {
-        case faceTracking
-        case audioFile
-        case microphone
+    enum AvatarMode: String, CaseIterable {
+        case autonomous = "Auto"
+        case faceTracking = "Face"
+        case audioFile = "Audio"
+        case microphone = "Mic"
     }
 
     private func applyTracking(_ tracking: AvatarFaceTracking) {
         #if !targetEnvironment(simulator)
         bridge.applyTracking(tracking, frame: viewModel.lastARFrame)
         #endif
-    }
-
-    private var activeTracking: AvatarFaceTracking {
-        switch mode {
-        case .faceTracking:
-            switch trackingMode {
-            case .world: return viewModel.trackingWorld
-            case .camera: return viewModel.trackingCamera
-            case .appleAR: return viewModel.trackingAppleAR
-            }
-        case .audioFile, .microphone: return audioAnimator.tracking
-        }
     }
 
     var body: some View {
@@ -54,7 +45,7 @@ struct ContentView: View {
             #endif
 
             VStack {
-                // Status
+                // Status bar
                 HStack {
                     Text(statusText)
                         .font(.caption2)
@@ -66,100 +57,118 @@ struct ContentView: View {
 
                 Spacer()
 
+                // Autonomous controls
+                if mode == .autonomous && showControls {
+                    autonomousControlsPanel
+                        .padding(.bottom, 4)
+                }
+
                 // Sample audio picker
                 if showSamples {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(AudioSample.all) { sample in
                                 Button {
-                                    playSample(sample)
+                                    if mode == .autonomous {
+                                        autonomous.speakWithSample(sample)
+                                    } else {
+                                        audioAnimator.startWithAudioFile(sample.url!)
+                                    }
                                 } label: {
                                     VStack(spacing: 2) {
-                                        Text(sample.name)
-                                            .font(.caption)
                                         Text(sample.voice)
                                             .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                        Text(sample.name)
+                                            .font(.caption2)
                                     }
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
                                     .background(.ultraThinMaterial)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .cornerRadius(8)
                                 }
                             }
                         }
                         .padding(.horizontal)
                     }
-                    .padding(.bottom, 4)
+                    .frame(height: 60)
                 }
 
-                // Tracking mode picker
-                if mode == .faceTracking {
-                    HStack(spacing: 0) {
-                        ForEach(AvatarFaceTracking.TrackingMode.allCases, id: \.self) { tm in
-                            Button {
-                                trackingMode = tm
-                                applyTracking(activeTracking)
-                            } label: {
-                                Text(tm.rawValue)
-                                    .font(.caption)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 5)
-                                    .background(trackingMode == tm ? .white.opacity(0.2) : .clear)
-                            }
-                            .foregroundStyle(trackingMode == tm ? .white : .white.opacity(0.4))
-                        }
-                    }
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                    .padding(.bottom, 4)
-                }
-
-                // Controls
+                // Bottom toolbar
                 HStack(spacing: 16) {
-                    Menu {
-                        Button("Face Tracking") { switchMode(to: .faceTracking) }
-                        Button("Audio File") { switchMode(to: .audioFile) }
-                        Button("Microphone") { switchMode(to: .microphone) }
-                    } label: {
-                        Image(systemName: modeIcon)
-                            .font(.title2)
-                            .foregroundStyle(.white)
-                    }
-
-                    if mode == .audioFile {
-                        Button {
-                            showSamples.toggle()
-                        } label: {
-                            Image(systemName: "music.note.list")
-                                .font(.title2)
-                                .foregroundStyle(showSamples ? .orange : .white)
+                    // Mode picker
+                    Picker("Mode", selection: $mode) {
+                        ForEach(AvatarMode.allCases, id: \.self) { m in
+                            Text(m.rawValue).tag(m)
                         }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 240)
 
+                    Spacer()
+
+                    // Controls toggle (autonomous)
+                    if mode == .autonomous {
                         Button {
-                            showFilePicker = true
+                            showControls.toggle()
                         } label: {
-                            Image(systemName: "folder")
-                                .font(.title2)
+                            Image(systemName: "slider.horizontal.3")
                                 .foregroundStyle(.white)
                         }
                     }
 
-                    Spacer()
+                    // Samples toggle
+                    if mode == .audioFile || mode == .autonomous {
+                        Button {
+                            showSamples.toggle()
+                        } label: {
+                            Image(systemName: "music.note.list")
+                                .foregroundStyle(.white)
+                        }
+                    }
+
+                    // File picker
+                    if mode == .audioFile {
+                        Button {
+                            showFilePicker = true
+                        } label: {
+                            Image(systemName: "folder")
+                                .foregroundStyle(.white)
+                        }
+                    }
+
+                    // Tracking mode (face tracking only)
+                    if mode == .faceTracking {
+                        Picker("", selection: $trackingMode) {
+                            Text("world").tag(AvatarFaceTracking.TrackingMode.world)
+                            Text("camera").tag(AvatarFaceTracking.TrackingMode.camera)
+                            Text("appleAR").tag(AvatarFaceTracking.TrackingMode.appleAR)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    }
                 }
                 .padding(.horizontal)
-                .padding(.bottom, 16)
+                .padding(.bottom, 8)
             }
         }
-        .onChange(of: viewModel.trackingWorld.timestamp) { _, _ in
-            applyTracking(activeTracking)
+        .onChange(of: mode) { _, newMode in
+            switchMode(to: newMode)
         }
-        .onChange(of: audioAnimator.tracking.timestamp) { _, _ in
+        .onChange(of: viewModel.trackingWorld.timestamp) { _, _ in
+            guard mode == .faceTracking else { return }
             applyTracking(activeTracking)
         }
         .onAppear {
-            viewModel.start()
+            switchMode(to: mode)
             audioAnimator.onTrackingUpdate = { tracking in
+                var t = tracking
+                t.coordinateSpace = .world
+                t.headTranslation = .zero
+                #if !targetEnvironment(simulator)
+                bridge.applyTracking(t)
+                #endif
+            }
+            autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
                 t.coordinateSpace = .world
                 t.headTranslation = .zero
@@ -170,50 +179,121 @@ struct ContentView: View {
         }
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.audio, .mpeg4Audio, .mp3, .wav, .aiff],
+            allowedContentTypes: [.audio, .mpeg4Audio, .mp3],
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                playFile(url)
+                if mode == .autonomous {
+                    autonomous.speakWithFile(url)
+                } else {
+                    audioAnimator.startWithAudioFile(url)
+                }
             }
+        }
+    }
+
+    // MARK: - Autonomous Controls
+
+    private var autonomousControlsPanel: some View {
+        VStack(spacing: 8) {
+            // State buttons
+            HStack(spacing: 8) {
+                stateButton("Idle", state: .idle) { autonomous.goIdle() }
+                stateButton("Listen", state: .listening) { autonomous.startListening() }
+                stateButton("Think", state: .thinking) { autonomous.startThinking() }
+            }
+
+            // Gesture buttons
+            HStack(spacing: 8) {
+                gestureButton("Nod") { autonomous.nod() }
+                gestureButton("Shake") { autonomous.shake() }
+                gestureButton("Tilt") { autonomous.tilt() }
+            }
+
+            // Expression buttons
+            HStack(spacing: 8) {
+                expressionButton("😊", preset: .smile)
+                expressionButton("😮", preset: .surprised)
+                expressionButton("😢", preset: .sad)
+                expressionButton("😠", preset: .angry)
+                expressionButton("😜", preset: .tongueOut)
+            }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial)
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+
+    private func stateButton(_ label: String, state: AvatarBehaviorEngine.BehaviorState, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(autonomous.currentState == state ? Color.blue : Color.gray.opacity(0.3))
+                .foregroundStyle(.white)
+                .cornerRadius(6)
+        }
+    }
+
+    private func gestureButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.3))
+                .foregroundStyle(.white)
+                .cornerRadius(6)
+        }
+    }
+
+    private func expressionButton(_ emoji: String, preset: ExpressionPreset) -> some View {
+        Button {
+            autonomous.playExpression(preset)
+        } label: {
+            Text(emoji)
+                .font(.title3)
+                .frame(width: 40, height: 40)
+                .background(Color.purple.opacity(0.3))
+                .cornerRadius(8)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private var activeTracking: AvatarFaceTracking {
+        switch trackingMode {
+        case .world: return viewModel.trackingWorld
+        case .camera: return viewModel.trackingCamera
+        case .appleAR: return viewModel.trackingAppleAR
         }
     }
 
     private var statusText: String {
         switch mode {
+        case .autonomous: return autonomous.status
         case .faceTracking: return viewModel.debugStatus
         case .audioFile, .microphone: return audioAnimator.status
         }
     }
 
-    private var modeIcon: String {
-        switch mode {
-        case .faceTracking: return "face.smiling"
-        case .audioFile: return "waveform"
-        case .microphone: return "mic"
-        }
-    }
-
-    private func playSample(_ sample: AudioSample) {
-        guard let url = sample.url else { return }
-        audioAnimator.startWithAudioFile(url)
-    }
-
-    private func playFile(_ url: URL) {
-        audioAnimator.startWithAudioFile(url)
-    }
-
     private func switchMode(to newMode: AvatarMode) {
+        // Stop everything
         audioAnimator.stop()
-        mode = newMode
+        autonomous.stop()
+        viewModel.stop()
+
         switch newMode {
+        case .autonomous:
+            autonomous.start()
         case .faceTracking:
             viewModel.start()
         case .microphone:
-            viewModel.stop()
             audioAnimator.startWithMicrophone()
         case .audioFile:
-            viewModel.stop()
+            break
         }
     }
 
