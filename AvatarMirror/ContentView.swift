@@ -149,7 +149,10 @@ struct ContentView: View {
                     t.headTranslation.z * 200 - 40
                 )
                 #if !targetEnvironment(simulator)
-                bridge.applyTracking(t)
+                // Use direct mode: bypasses Apple's _applyHeadPose (which may
+                // ignore our quaternion in world mode without a real ARFrame).
+                // Sets neckNode orientation and rootJoint position directly.
+                bridge.applyTrackingDirect(t)
                 #endif
             }
         }
