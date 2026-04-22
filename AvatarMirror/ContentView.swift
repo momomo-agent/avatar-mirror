@@ -11,7 +11,7 @@ struct ContentView: View {
     @State private var trackingMode: AvatarFaceTracking.TrackingMode = .camera
     @State private var showFilePicker = false
     @State private var showSamples = false
-    @State private var showControls = false
+    @State private var showControls = true
 
     #if !targetEnvironment(simulator)
     private let bridge = AvatarBridge()
