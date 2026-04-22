@@ -141,17 +141,21 @@ struct ContentView: View {
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
                 t.coordinateSpace = .world
-                // Scale idle spatial movement to visible but grounded range
-                // Raw values ~0.002-0.009m → want ~0.5-2.0 avatar units of subtle sway
+                // Body translation: sway + breathing (avatar scene units)
+                if let bodyT = t.bodyTranslation {
+                    t.bodyTranslation = SIMD3(
+                        bodyT.x * 200,
+                        bodyT.y * 150,
+                        bodyT.z * 200
+                    )
+                }
+                // Head translation: neck pivot displacement
                 t.headTranslation = SIMD3(
                     t.headTranslation.x * 200,
                     t.headTranslation.y * 150,
                     t.headTranslation.z * 200 - 40
                 )
                 #if !targetEnvironment(simulator)
-                // Use direct mode: bypasses Apple's _applyHeadPose (which may
-                // ignore our quaternion in world mode without a real ARFrame).
-                // Sets neckNode orientation and rootJoint position directly.
                 bridge.applyTrackingDirect(t)
                 #endif
             }
