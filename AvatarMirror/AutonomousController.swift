@@ -8,10 +8,17 @@ final class AutonomousController: ObservableObject {
     @Published var status = "Idle"
     @Published var currentState: AvatarBehaviorEngine.BehaviorState = .idle
     
+    /// Body state derived from head motion — drives the body overlay.
+    @Published var bodyLean: CGFloat = 0      // -1 (left) to 1 (right)
+    @Published var bodyTilt: CGFloat = 0      // forward/back lean
+    @Published var bodyBreath: CGFloat = 0    // 0..1 breathing cycle
+    
     let engine = AvatarBehaviorEngine()
     
     /// Direct callback for 60fps tracking updates.
     var onTrackingUpdate: ((AvatarFaceTracking) -> Void)?
+    
+    private var breathPhase: Double = 0
     
     private var audioEngine: AVAudioEngine?
     private var audioPlayer: AVAudioPlayerNode?
@@ -20,10 +27,32 @@ final class AutonomousController: ObservableObject {
     
     func start() {
         engine.onFrame = { [weak self] tracking in
+            self?.updateBodyState(from: tracking)
             self?.onTrackingUpdate?(tracking)
         }
         engine.start()
         status = "Autonomous — Idle"
+    }
+    
+    private func updateBodyState(from tracking: AvatarFaceTracking) {
+        // Derive body lean from head translation X (head moves right → body leans right)
+        // headTranslation is in avatar units after scaling in ContentView
+        let rawLean = Double(tracking.headTranslation.x)
+        let smoothing = 0.15
+        let newLean = bodyLean + (rawLean * 0.005 - bodyLean) * smoothing
+        
+        // Forward/back from head pitch (looking down = forward lean)
+        let pitch = Double(tracking.headRotation.pitch)
+        let newTilt = bodyTilt + (pitch * 0.3 - bodyTilt) * smoothing
+        
+        // Breathing cycle (independent, ~4 second period)
+        breathPhase += 1.0 / 60.0 * 0.25  // ~4s period at 60fps
+        if breathPhase > 1.0 { breathPhase -= 1.0 }
+        let newBreath = (1.0 + sin(breathPhase * .pi * 2)) * 0.5
+        
+        bodyLean = newLean.clamped(to: -1...1)
+        bodyTilt = newTilt.clamped(to: -1...1)
+        bodyBreath = newBreath
     }
     
     func stop() {
@@ -151,5 +180,11 @@ final class AutonomousController: ObservableObject {
         }
         currentFileURL = nil
         currentFileIsSecurityScoped = false
+    }
+}
+
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }

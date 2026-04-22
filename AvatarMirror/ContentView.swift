@@ -35,11 +35,29 @@ struct ContentView: View {
             #if targetEnvironment(simulator)
             simulatorPlaceholder
             #else
-            AvatarView(
-                bridge: bridge,
-                character: viewModel.currentAnimoji
-            )
-            .ignoresSafeArea()
+            ZStack {
+                AvatarView(
+                    bridge: bridge,
+                    character: viewModel.currentAnimoji
+                )
+                .ignoresSafeArea()
+                
+                // Body overlay — positioned below the avatar head
+                if mode == .autonomous {
+                    GeometryReader { geo in
+                        AvatarBodyOverlay(
+                            lean: autonomous.bodyLean,
+                            tilt: autonomous.bodyTilt,
+                            breath: autonomous.bodyBreath,
+                            character: viewModel.currentAnimoji
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height * 0.45)
+                        .position(x: geo.size.width * 0.5, y: geo.size.height * 0.78)
+                        .allowsHitTesting(false)
+                    }
+                    .ignoresSafeArea()
+                }
+            }
             #endif
 
             VStack(spacing: 0) {
