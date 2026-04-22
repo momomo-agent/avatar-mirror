@@ -300,9 +300,11 @@ struct ContentView: View {
     // MARK: - Simulator Placeholder
 
     #if targetEnvironment(simulator)
+    private let animojiCharacters = ["fox", "cat", "dog", "robot", "alien", "panda", "unicorn", "owl", "monkey", "lion"]
+
     private var simulatorPlaceholder: some View {
         VStack(spacing: 16) {
-            Text("🦊")
+            Text(characterEmoji)
                 .font(.system(size: 120))
             Text(viewModel.currentAnimoji.capitalized)
                 .font(.title3)
@@ -310,8 +312,24 @@ struct ContentView: View {
             Text("Simulator — AVTView requires device")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            Text("Tap to change character")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            let current = viewModel.currentAnimoji
+            let idx = animojiCharacters.firstIndex(of: current) ?? 0
+            let next = (idx + 1) % animojiCharacters.count
+            viewModel.currentAnimoji = animojiCharacters[next]
+        }
+    }
+
+    private var characterEmoji: String {
+        ["fox": "🦊", "cat": "🐱", "dog": "🐶", "robot": "🤖",
+         "alien": "👽", "panda": "🐼", "unicorn": "🦄", "owl": "🦉",
+         "monkey": "🐵", "lion": "🦁"][viewModel.currentAnimoji] ?? "🦊"
     }
     #endif
 }

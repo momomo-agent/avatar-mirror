@@ -9,7 +9,7 @@ final class AvatarMirrorViewModel: NSObject, ObservableObject {
     @Published var trackingWorld = AvatarFaceTracking()
     @Published var trackingCamera = AvatarFaceTracking()
     @Published var trackingAppleAR = AvatarFaceTracking()
-    @Published var currentAnimoji = "skull"
+    @Published var currentAnimoji = "fox"
     @Published var debugStatus = "Starting..."
     var debugFrameCount = 0
     /// Last ARFrame for Apple buffer comparison
