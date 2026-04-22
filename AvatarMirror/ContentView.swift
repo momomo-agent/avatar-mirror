@@ -63,6 +63,28 @@ struct ContentView: View {
                         .padding(.bottom, 4)
                 }
 
+                // Character picker (always visible)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(AvatarBridge.availableAnimoji, id: \.self) { name in
+                            Button {
+                                viewModel.currentAnimoji = name
+                            } label: {
+                                Text(name)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(viewModel.currentAnimoji == name ? Color.blue : Color.white.opacity(0.15))
+                                    .foregroundStyle(.white)
+                                    .cornerRadius(6)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                .frame(height: 32)
+                .padding(.bottom, 4)
+
                 // Sample audio picker
                 if showSamples {
                     ScrollView(.horizontal, showsIndicators: false) {
