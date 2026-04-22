@@ -93,7 +93,9 @@ final class AutonomousController: ObservableObject {
         
         do {
             try avEngine.start()
-            player.scheduleFile(audioFile, at: nil) { [weak self] in
+            // .dataPlayedBack ensures callback fires AFTER audio is heard,
+            // not when the buffer is merely scheduled/consumed.
+            player.scheduleFile(audioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.goIdle()
                 }
