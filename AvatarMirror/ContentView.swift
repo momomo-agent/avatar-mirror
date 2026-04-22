@@ -117,6 +117,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                .animation(.easeInOut(duration: 0.25), value: mode)
                 .padding(.bottom, 8)
             }
         }
@@ -139,8 +140,11 @@ struct ContentView: View {
             }
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
-                t.coordinateSpace = .world
-                t.headTranslation = .zero
+                // Use camera coordinate space (matches Face-Camera mode)
+                t.coordinateSpace = .cameraRotationOnly
+                // Position avatar at natural viewing distance
+                // Face-Camera typical values: x≈0, y≈-2..2, z≈-35..-45
+                t.headTranslation = SIMD3(0, 0, -40)
                 #if !targetEnvironment(simulator)
                 bridge.applyTracking(t)
                 #endif
