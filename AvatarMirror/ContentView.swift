@@ -141,19 +141,21 @@ struct ContentView: View {
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
                 t.coordinateSpace = .world
-                // Body translation: sway + breathing (avatar scene units)
+                // Body translation: keep small — sway should be subtle
+                // Raw values ~0.3-0.5 units, want ~3-5 units of gentle drift
                 if let bodyT = t.bodyTranslation {
                     t.bodyTranslation = SIMD3(
-                        bodyT.x * 200,
-                        bodyT.y * 150,
-                        bodyT.z * 200
+                        bodyT.x * 10,
+                        bodyT.y * 8,
+                        bodyT.z * 10
                     )
                 }
-                // Head translation: neck pivot displacement
+                // Head translation: neck pivot displacement (very small)
+                // Raw values ~0.001-0.01, want ~1-2 units
                 t.headTranslation = SIMD3(
-                    t.headTranslation.x * 200,
-                    t.headTranslation.y * 150,
-                    t.headTranslation.z * 200 - 40
+                    t.headTranslation.x * 100,
+                    t.headTranslation.y * 80,
+                    t.headTranslation.z * 100
                 )
                 #if !targetEnvironment(simulator)
                 bridge.applyTrackingDirect(t)
