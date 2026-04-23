@@ -32,13 +32,6 @@ final class AutonomousController: ObservableObject {
         }
         engine.start()
         status = "Autonomous — Idle"
-        // Auto-play for testing
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self else { return }
-            if let url = Bundle.main.url(forResource: "06_george_story", withExtension: "mp3") {
-                self.speakWithFile(url)
-            }
-        }
     }
     
     private func updateBodyState(from tracking: AvatarFaceTracking) {
