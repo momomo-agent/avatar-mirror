@@ -32,6 +32,13 @@ final class AutonomousController: ObservableObject {
         }
         engine.start()
         status = "Autonomous — Idle"
+        // Auto-play for testing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            if let url = Bundle.main.url(forResource: "06_george_story", withExtension: "mp3") {
+                self.speakWithFile(url)
+            }
+        }
     }
     
     private func updateBodyState(from tracking: AvatarFaceTracking) {
@@ -89,13 +96,17 @@ final class AutonomousController: ObservableObject {
     func nod() {
         engine.headGesture.nod()
     }
-    
+
     func shake() {
         engine.headGesture.shake()
     }
-    
+
     func tilt() {
         engine.headGesture.tilt()
+    }
+
+    func playGesture(_ type: AvatarHeadGesture.GestureType, intensity: Float = 1.0) {
+        engine.headGesture.play(type, intensity: intensity)
     }
     
     // MARK: - Speaking with Audio File

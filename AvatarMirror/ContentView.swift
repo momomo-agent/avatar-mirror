@@ -70,11 +70,29 @@ struct ContentView: View {
                             chip("Idle", active: autonomous.currentState == .idle) { autonomous.goIdle() }
                             chip("Listen", active: autonomous.currentState == .listening) { autonomous.startListening() }
                             chip("Think", active: autonomous.currentState == .thinking) { autonomous.startThinking() }
-                            Divider().frame(height: 20).background(Color.white.opacity(0.2))
+                        }
+                        // Gestures row
+                        scrollRow {
                             chip("Nod", color: .orange) { autonomous.nod() }
+                            chip("2xNod", color: .orange) { autonomous.playGesture(.doubleNod) }
+                            chip("3xNod", color: .orange) { autonomous.playGesture(.enthusiasticNod) }
                             chip("Shake", color: .orange) { autonomous.shake() }
                             chip("Tilt", color: .orange) { autonomous.tilt() }
-                            Divider().frame(height: 20).background(Color.white.opacity(0.2))
+                            chip("Think", color: .orange) { autonomous.playGesture(.think) }
+                            chip("Consider", color: .orange) { autonomous.playGesture(.consider) }
+                            chip("Surprise", color: .orange) { autonomous.playGesture(.surprise) }
+                            chip("Realize", color: .orange) { autonomous.playGesture(.realize) }
+                            chip("Emphasis", color: .orange) { autonomous.playGesture(.emphasize) }
+                            chip("Skeptic", color: .orange) { autonomous.playGesture(.skeptical) }
+                            chip("Empathy", color: .orange) { autonomous.playGesture(.empathize) }
+                            chip("Excited", color: .orange) { autonomous.playGesture(.excited) }
+                            chip("Sad", color: .orange) { autonomous.playGesture(.sad) }
+                            chip("Dismiss", color: .orange) { autonomous.playGesture(.dismissive) }
+                            chip("Swaggle", color: .orange) { autonomous.playGesture(.swaggle) }
+                            chip("Shrug", color: .orange) { autonomous.playGesture(.shrug) }
+                        }
+                        // Expressions row
+                        scrollRow {
                             chipEmoji("😊") { autonomous.playExpression(.smile) }
                             chipEmoji("😮") { autonomous.playExpression(.surprised) }
                             chipEmoji("😢") { autonomous.playExpression(.sad) }
@@ -141,9 +159,9 @@ struct ContentView: View {
             autonomous.onTrackingUpdate = { tracking in
                 var t = tracking
                 t.coordinateSpace = .world
-                t.headTranslation.z -= 40  // viewing distance
+                t.headTranslation.z -= 40
                 #if !targetEnvironment(simulator)
-                bridge.applyTrackingDirect(t)
+                bridge.applyTracking(t)
                 #endif
             }
         }
